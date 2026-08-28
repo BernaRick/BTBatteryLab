@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: btbatterylab
+Version: 0.1.0
+Summary: Bluetooth battery monitoring and analytics platform for Windows
+Author: Patrick Bernardoni
+Requires-Python: >=3.11
+License-File: LICENSE (MIT)
+Dynamic: license-file
