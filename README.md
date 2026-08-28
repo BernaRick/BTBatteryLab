@@ -1,3 +1,5 @@
+<img width="250" height="250" alt="1" src="https://github.com/user-attachments/assets/dea32260-bf35-4caf-b551-b6876902d595" />
+
 # BTBatteryLab
 
 BTBatteryLab is an open-source Bluetooth battery monitoring and analytics platform for Windows.
