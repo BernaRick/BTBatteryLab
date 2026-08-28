@@ -105,7 +105,7 @@ BTBatteryLab
 ├── storage
 ├── analytics
 ├── dashboard
-└── notifications
+├── notifications
 
 ### Collector
 
