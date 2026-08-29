@@ -1,0 +1,6 @@
+{"Timestamp":"2026-08-29T14:12:23.2864539Z","Event":"Startup","Status":"Connected","DeviceName":"MX Master 2S","BluetoothAddress":"FF8EDDAAF1CD"}
+{"Timestamp":"2026-08-29T14:12:23.3848578Z","Event":"GattDiscovery","Status":"Success","DeviceName":"MX Master 2S","BluetoothAddress":"FF8EDDAAF1CD"}
+{"Timestamp":"2026-08-29T14:12:41.2715867Z","Event":"ConnectionStatusChanged","Status":"Disconnected","DeviceName":"MX Master 2S","BluetoothAddress":"FF8EDDAAF1CD"}
+{"Timestamp":"2026-08-29T14:12:56.9013285Z","Event":"ConnectionStatusChanged","Status":"Connected","DeviceName":"MX Master 2S","BluetoothAddress":"FF8EDDAAF1CD"}
+{"Timestamp":"2026-08-29T14:14:55.8457449Z","Event":"ConnectionStatusChanged","Status":"Disconnected","DeviceName":"MX Master 2S","BluetoothAddress":"FF8EDDAAF1CD"}
+{"Timestamp":"2026-08-29T14:16:00.7081408Z","Event":"ConnectionStatusChanged","Status":"Connected","DeviceName":"MX Master 2S","BluetoothAddress":"FF8EDDAAF1CD"}

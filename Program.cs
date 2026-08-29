@@ -1,127 +1,145 @@
-using BluetoothWatcher;
+using System.Text.Json;
+using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
-using Windows.Devices.Enumeration.Pnp;
 
-Console.WriteLine("Bluetooth Device Watcher");
+const string TargetName = "MX Master 2S";
+
+string logFile =
+    Path.Combine(
+        AppContext.BaseDirectory,
+        $"ble-events-{DateTime.Now:yyyyMMdd-HHmmss}.jsonl");
+
+void LogEvent(
+    string eventType,
+    string status,
+    string deviceName,
+    ulong bluetoothAddress)
+{
+    var record = new
+    {
+        Timestamp = DateTime.UtcNow,
+        Event = eventType,
+        Status = status,
+        DeviceName = deviceName,
+        BluetoothAddress = bluetoothAddress.ToString("X")
+    };
+
+    string json = JsonSerializer.Serialize(record);
+
+    File.AppendAllText(
+        logFile,
+        json + Environment.NewLine);
+}
+
+Console.WriteLine("MX Master 2S BLE Monitor");
 Console.WriteLine("------------------------");
+Console.WriteLine();
 
-string[] properties =
+var devices = await DeviceInformation.FindAllAsync();
+
+DeviceInformation? target =
+    devices.FirstOrDefault(d =>
+        !string.IsNullOrWhiteSpace(d.Name) &&
+        d.Name.Contains(
+            TargetName,
+            StringComparison.OrdinalIgnoreCase));
+
+if (target is null)
 {
-    "System.ItemNameDisplay",
-    "System.Devices.Aep.DeviceAddress",
-    "System.Devices.Aep.IsConnected",
-    "System.Devices.Present",
-    "System.Devices.ContainerId",
-    "System.Devices.Aep.Bluetooth.Le.IsConnectable",
-    "System.Devices.Aep.Bluetooth.LastSeenTime",
-    "System.Devices.Aep.Bluetooth.LastConnectedTime"
+    Console.WriteLine("MX Master 2S non trovato.");
+    return;
+}
+
+Console.WriteLine("Dispositivo trovato:");
+Console.WriteLine(target.Name);
+Console.WriteLine(target.Id);
+Console.WriteLine();
+
+BluetoothLEDevice? bleDevice =
+    await BluetoothLEDevice.FromIdAsync(target.Id);
+
+if (bleDevice is null)
+{
+    Console.WriteLine("FromIdAsync() ha restituito null.");
+    return;
+}
+
+Console.WriteLine("BluetoothLEDevice aperto.");
+Console.WriteLine($"Name               : {bleDevice.Name}");
+Console.WriteLine($"BluetoothAddress   : 0x{bleDevice.BluetoothAddress:X}");
+Console.WriteLine($"ConnectionStatus   : {bleDevice.ConnectionStatus}");
+Console.WriteLine();
+
+LogEvent(
+    "Startup",
+    bleDevice.ConnectionStatus.ToString(),
+    bleDevice.Name,
+    bleDevice.BluetoothAddress);
+
+bleDevice.ConnectionStatusChanged += (_, _) =>
+{
+    string status =
+        bleDevice.ConnectionStatus.ToString();
+
+    string timestamp =
+        DateTime.Now.ToString("HH:mm:ss.fff");
+
+    Console.WriteLine(
+        $"[{timestamp}] ConnectionStatus = {status}");
+
+    LogEvent(
+        "ConnectionStatusChanged",
+        status,
+        bleDevice.Name,
+        bleDevice.BluetoothAddress);
 };
 
-string bluetoothSelector =
-    "System.Devices.Aep.ProtocolId:=\"{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}\"";
+Console.WriteLine("Tentativo lettura servizi GATT...");
+Console.WriteLine();
 
-//
-// DEVICE WATCHER
-//
-DeviceWatcher watcher =
-    DeviceInformation.CreateWatcher(
-        bluetoothSelector,
-        properties,
-        DeviceInformationKind.AssociationEndpoint);
-
-watcher.Added += (_, device) =>
+try
 {
-    DeviceLogger.Log(
-        "Added",
-        device.Id,
-        device.Name,
-        device.Properties.ToDictionary(
-            x => x.Key,
-            x => x.Value ?? "null"));
-};
+    var gattResult =
+        await bleDevice.GetGattServicesAsync();
 
-watcher.Updated += (_, update) =>
+    Console.WriteLine(
+        $"Gatt Status: {gattResult.Status}");
+
+    Console.WriteLine(
+        $"Servizi trovati: {gattResult.Services.Count}");
+
+    foreach (var service in gattResult.Services)
+    {
+        Console.WriteLine(
+            $"  Service UUID: {service.Uuid}");
+    }
+
+    LogEvent(
+        "GattDiscovery",
+        gattResult.Status.ToString(),
+        bleDevice.Name,
+        bleDevice.BluetoothAddress);
+}
+catch (Exception ex)
 {
-    DeviceLogger.Log(
-        "Updated",
-        update.Id,
-        null,
-        update.Properties.ToDictionary(
-            x => x.Key,
-            x => x.Value ?? "null"));
-};
+    Console.WriteLine(
+        $"Errore GATT: {ex.Message}");
 
-watcher.Removed += (_, remove) =>
-{
-    DeviceLogger.Log(
-        "Removed",
-        remove.Id,
-        null);
-};
-
-watcher.EnumerationCompleted += (_, _) =>
-{
-    Console.WriteLine("Initial enumeration completed.");
-};
-
-watcher.Stopped += (_, _) =>
-{
-    Console.WriteLine("Watcher stopped.");
-};
-
-//
-// PNP WATCHER
-//
-var pnpProps = new[]
-{
-    "System.Devices.Present",
-    "System.Devices.ContainerId"
-};
-
-PnpObjectWatcher pnpWatcher =
-    PnpObject.CreateWatcher(
-        PnpObjectType.Device,
-        pnpProps);
-
-pnpWatcher.Added += (_, obj) =>
-{
-    DeviceLogger.Log(
-        "PnpAdded",
-        obj.Id,
-        null,
-        obj.Properties.ToDictionary(
-            x => x.Key,
-            x => x.Value ?? "null"));
-};
-
-pnpWatcher.Updated += (_, update) =>
-{
-    DeviceLogger.Log(
-        "PnpUpdated",
-        update.Id,
-        null,
-        update.Properties.ToDictionary(
-            x => x.Key,
-            x => x.Value ?? "null"));
-};
-
-pnpWatcher.Removed += (_, remove) =>
-{
-    DeviceLogger.Log(
-        "PnpRemoved",
-        remove.Id,
-        null);
-};
-
-watcher.Start();
-pnpWatcher.Start();
+    LogEvent(
+        "GattError",
+        ex.Message,
+        bleDevice.Name,
+        bleDevice.BluetoothAddress);
+}
 
 Console.WriteLine();
+Console.WriteLine($"Log file: {logFile}");
+Console.WriteLine();
 Console.WriteLine("Monitoring...");
-Console.WriteLine("Accendi e spegni il dispositivo.");
+Console.WriteLine("Lascia il mouse fermo, riattivalo oppure spegnilo.");
 Console.WriteLine("Premi ENTER per terminare.");
+Console.WriteLine();
 
 Console.ReadLine();
 
-watcher.Stop();
-pnpWatcher.Stop();
+bleDevice.Dispose();
