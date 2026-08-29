@@ -1,12 +1,18 @@
 LICENSE (MIT)
 README.md
 pyproject.toml
-src/btbatterylab/__init__.py
 src/btbatterylab/main.py
 src/btbatterylab.egg-info/PKG-INFO
 src/btbatterylab.egg-info/SOURCES.txt
 src/btbatterylab.egg-info/dependency_links.txt
 src/btbatterylab.egg-info/top_level.txt
+src/btbatterylab/collector/bluetooth_collector.py
 src/btbatterylab/models/__init__.py
 src/btbatterylab/models/battery_reading.py
 src/btbatterylab/models/device.py
+src/btbatterylab/models/device_status.py
+src/btbatterylab/monitoring/__init__.py
+src/btbatterylab/monitoring/ble_presence_monitor.py
+src/btbatterylab/monitoring/tail_monitor.py
+src/btbatterylab/tools/property_explorer.py
+tests/test_presence_monitor.py

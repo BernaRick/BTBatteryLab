@@ -1,1 +1,0 @@
-# BTBatteryLab Collector Package
