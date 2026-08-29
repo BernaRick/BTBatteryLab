@@ -10,9 +10,10 @@ class BluetoothCollector:
         command = (
             "Get-PnpDevice | "
             "Where-Object {$_.Class -eq 'Bluetooth'} | "
-            "Select-Object FriendlyName, InstanceId | "
+            "Select-Object FriendlyName, Status, InstanceId | "
             "ConvertTo-Json -Depth 3"
         )
+
 
         result = subprocess.run(
             [
@@ -49,6 +50,7 @@ class BluetoothCollector:
         for item in raw_devices:
 
             name = item.get("FriendlyName")
+            status = item.get("Status")
             instance_id = item.get("InstanceId")
 
             if not name:
@@ -69,6 +71,7 @@ class BluetoothCollector:
                 Device(
                     id=instance_id,
                     name=name,
+                    status=status,
                 )
             )
 
