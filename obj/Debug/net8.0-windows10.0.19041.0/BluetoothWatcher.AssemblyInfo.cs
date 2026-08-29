@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BluetoothWatcher")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fe215c0596f363dbfb66749efc14675321b2f82b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ad3e2d85a9f63523777dd1a5dbe26c5b3bf239c2")]
 [assembly: System.Reflection.AssemblyProductAttribute("BluetoothWatcher")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BluetoothWatcher")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

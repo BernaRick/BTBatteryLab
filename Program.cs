@@ -4,10 +4,23 @@ using Windows.Devices.Enumeration;
 
 const string TargetName = "MX Master 2S";
 
+string dataDirectory =
+    Path.Combine(
+        Environment.GetFolderPath(
+            Environment.SpecialFolder.MyDocuments),
+        "BTBatteryLabData");
+
+Directory.CreateDirectory(dataDirectory);
+
 string logFile =
     Path.Combine(
-        AppContext.BaseDirectory,
-        $"ble-events-{DateTime.Now:yyyyMMdd-HHmmss}.jsonl");
+        dataDirectory,
+        "ble-events.jsonl");
+
+if (File.Exists(logFile))
+{
+    File.Delete(logFile);
+}
 
 void LogEvent(
     string eventType,
@@ -24,7 +37,8 @@ void LogEvent(
         BluetoothAddress = bluetoothAddress.ToString("X")
     };
 
-    string json = JsonSerializer.Serialize(record);
+    string json =
+        JsonSerializer.Serialize(record);
 
     File.AppendAllText(
         logFile,
@@ -34,8 +48,11 @@ void LogEvent(
 Console.WriteLine("MX Master 2S BLE Monitor");
 Console.WriteLine("------------------------");
 Console.WriteLine();
+Console.WriteLine($"Log file: {logFile}");
+Console.WriteLine();
 
-var devices = await DeviceInformation.FindAllAsync();
+var devices =
+    await DeviceInformation.FindAllAsync();
 
 DeviceInformation? target =
     devices.FirstOrDefault(d =>
@@ -56,18 +73,29 @@ Console.WriteLine(target.Id);
 Console.WriteLine();
 
 BluetoothLEDevice? bleDevice =
-    await BluetoothLEDevice.FromIdAsync(target.Id);
+    await BluetoothLEDevice.FromIdAsync(
+        target.Id);
 
 if (bleDevice is null)
 {
-    Console.WriteLine("FromIdAsync() ha restituito null.");
+    Console.WriteLine(
+        "FromIdAsync() ha restituito null.");
+
     return;
 }
 
-Console.WriteLine("BluetoothLEDevice aperto.");
-Console.WriteLine($"Name               : {bleDevice.Name}");
-Console.WriteLine($"BluetoothAddress   : 0x{bleDevice.BluetoothAddress:X}");
-Console.WriteLine($"ConnectionStatus   : {bleDevice.ConnectionStatus}");
+Console.WriteLine(
+    "BluetoothLEDevice aperto.");
+
+Console.WriteLine(
+    $"Name               : {bleDevice.Name}");
+
+Console.WriteLine(
+    $"BluetoothAddress   : 0x{bleDevice.BluetoothAddress:X}");
+
+Console.WriteLine(
+    $"ConnectionStatus   : {bleDevice.ConnectionStatus}");
+
 Console.WriteLine();
 
 LogEvent(
@@ -82,7 +110,8 @@ bleDevice.ConnectionStatusChanged += (_, _) =>
         bleDevice.ConnectionStatus.ToString();
 
     string timestamp =
-        DateTime.Now.ToString("HH:mm:ss.fff");
+        DateTime.Now.ToString(
+            "HH:mm:ss.fff");
 
     Console.WriteLine(
         $"[{timestamp}] ConnectionStatus = {status}");
@@ -94,7 +123,9 @@ bleDevice.ConnectionStatusChanged += (_, _) =>
         bleDevice.BluetoothAddress);
 };
 
-Console.WriteLine("Tentativo lettura servizi GATT...");
+Console.WriteLine(
+    "Tentativo lettura servizi GATT...");
+
 Console.WriteLine();
 
 try
@@ -133,11 +164,15 @@ catch (Exception ex)
 }
 
 Console.WriteLine();
-Console.WriteLine($"Log file: {logFile}");
-Console.WriteLine();
-Console.WriteLine("Monitoring...");
-Console.WriteLine("Lascia il mouse fermo, riattivalo oppure spegnilo.");
-Console.WriteLine("Premi ENTER per terminare.");
+Console.WriteLine(
+    "Monitoring...");
+
+Console.WriteLine(
+    "Spegni e riaccendi il mouse per generare eventi.");
+
+Console.WriteLine(
+    "Premi ENTER per terminare.");
+
 Console.WriteLine();
 
 Console.ReadLine();
