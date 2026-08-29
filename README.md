@@ -135,7 +135,7 @@ Provides battery alerts and warnings.
 
 ### v0.1 Alpha
 
-- Device discovery
+- Device discovery ✅
 - Battery collection
 - SQLite database
 - CSV export
