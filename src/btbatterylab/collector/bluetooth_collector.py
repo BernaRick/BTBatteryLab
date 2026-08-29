@@ -6,18 +6,13 @@ from btbatterylab.models.device import Device
 
 class BluetoothCollector:
 
-    def discover(self) -> list[Device]:
-
+    def discover(self):
         command = (
-            "Get-PnPDevice | "
+            "Get-PnpDevice | "
             "Where-Object {$_.Class -eq 'Bluetooth'} | "
             "Select-Object FriendlyName, InstanceId | "
-            "ConvertTo-Json"
+            "ConvertTo-Json -Depth 3"
         )
-
-        print("COMMAND:")
-        print(command)
-        print()
 
         result = subprocess.run(
             [
@@ -29,14 +24,6 @@ class BluetoothCollector:
             text=True,
         )
 
-        print("STDOUT:")
-        print(result.stdout)
-        print()
-
-        print("STDERR:")
-        print(result.stderr)
-        print()
-
         if result.returncode != 0:
             raise RuntimeError(result.stderr)
 
@@ -45,7 +32,19 @@ class BluetoothCollector:
         if isinstance(raw_devices, dict):
             raw_devices = [raw_devices]
 
+        excluded_keywords = [
+            "Generic Attribute",
+            "Generic Access",
+            "Enumerator",
+            "RFCOMM",
+            "Transport",
+            "Service",
+            "Wireless Bluetooth",
+        ]
+
         devices: list[Device] = []
+
+        seen_names = set()
 
         for item in raw_devices:
 
@@ -54,6 +53,17 @@ class BluetoothCollector:
 
             if not name:
                 continue
+
+            if any(
+                keyword.lower() in name.lower()
+                for keyword in excluded_keywords
+            ):
+                continue
+
+            if name in seen_names:
+                continue
+
+            seen_names.add(name)
 
             devices.append(
                 Device(
