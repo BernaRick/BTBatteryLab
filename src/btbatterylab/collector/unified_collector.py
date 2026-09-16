@@ -1,11 +1,18 @@
 import json
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from btbatterylab.collector.bluetooth_collector import BluetoothCollector
 from btbatterylab.monitoring.tail_monitor import JsonlTailMonitor
+
+# Spaziatura minima tra un poll PnP "svegliato" da un evento di
+# connessione e il successivo, cosi' che piu' device classici che si
+# connettono quasi insieme (es. accensione di piu' cuffie di fila)
+# non facciano partire un poll PowerShell a testa.
+MIN_POLL_SPACING_SECONDS = 15.0
 
 
 def _is_generic_name(name: str | None) -> bool:
@@ -72,6 +79,8 @@ class UnifiedCollector:
         self._states: dict[str, DeviceState] = {}
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
+        self._poll_now_event = threading.Event()
+        self._last_poll_time: float | None = None
         self._polling_thread: threading.Thread | None = None
 
         self._tail_monitor = JsonlTailMonitor(
@@ -136,6 +145,17 @@ class UnifiedCollector:
 
         self._print_state(address)
 
+        # I device classici (BR/EDR, es. cuffie senza interfaccia BLE)
+        # non possono riportare la batteria da questo canale: il loro
+        # evento "Connected" arriva sempre con BatteryPercent=null.
+        # Invece di aspettare fino a poll_interval_seconds per scoprire
+        # la batteria, facciamo scattare subito un poll PnP. Innocuo
+        # anche per un device BLE senza Battery Service: nel peggiore
+        # dei casi e' un poll PnP in piu', limitato dalla spaziatura
+        # minima in _wait_for_next_poll.
+        if online is True and battery_percent is None:
+            self._poll_now_event.set()
+
     # --- canale "pnp" ---
 
     def _poll_pnp_battery(self) -> bool:
@@ -189,6 +209,7 @@ class UnifiedCollector:
     def _polling_loop(self) -> None:
         while not self._stop_event.is_set():
             success = self._poll_pnp_battery()
+            self._last_poll_time = time.monotonic()
 
             wait_seconds = (
                 self.poll_interval_seconds
@@ -196,7 +217,44 @@ class UnifiedCollector:
                 else self.failure_retry_seconds
             )
 
-            self._stop_event.wait(wait_seconds)
+            self._wait_for_next_poll(wait_seconds)
+
+    def _wait_for_next_poll(self, wait_seconds: float) -> None:
+        """
+        Aspetta fino al prossimo poll programmato, ma si sveglia prima
+        se arriva un evento di connessione senza batteria (vedi
+        _handle_ble_event) - a patto che sia passato almeno
+        MIN_POLL_SPACING_SECONDS dall'ultimo poll, per non martellare
+        PowerShell se piu' device si connettono quasi insieme.
+        """
+
+        deadline = time.monotonic() + wait_seconds
+
+        while not self._stop_event.is_set():
+            remaining = deadline - time.monotonic()
+
+            if remaining <= 0:
+                return
+
+            triggered = self._poll_now_event.wait(min(remaining, 1.0))
+
+            if not triggered:
+                continue
+
+            self._poll_now_event.clear()
+
+            since_last_poll = (
+                time.monotonic() - self._last_poll_time
+                if self._last_poll_time is not None
+                else MIN_POLL_SPACING_SECONDS
+            )
+
+            if since_last_poll >= MIN_POLL_SPACING_SECONDS:
+                return  # esce subito: _polling_loop fara' un poll ora
+
+            # Troppo presto rispetto all'ultimo poll: ignora questo
+            # trigger e continua ad aspettare il resto del tempo
+            # pianificato (o un prossimo trigger, piu' avanti).
 
     # --- helper condivisi ---
 
