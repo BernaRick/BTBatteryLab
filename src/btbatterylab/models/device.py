@@ -8,3 +8,4 @@ class Device:
     status: str | None = None
     device_type: str | None = None
     vendor: str | None = None
+    address: str | None = None

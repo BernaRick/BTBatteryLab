@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from datetime import datetime
 
@@ -21,6 +22,31 @@ EXCLUDED_KEYWORDS = [
     "Service",
     "Wireless Bluetooth",
 ]
+
+# Matches the 12 hex-digit Bluetooth address embedded in a PnP InstanceId,
+# e.g. "BTHENUM\DEV_50C275770AE8\..." or "BTHLE\DEV_50C275770AE8\...".
+# The same physical device can show up as *two* separate PnP nodes (one
+# classic BR/EDR under BTHENUM, one BLE under BTHLE) with two different
+# InstanceIds but the same embedded address: extracting it lets us match
+# a battery reading back to the device it actually belongs to.
+_ADDRESS_PATTERN = re.compile(r"DEV_([0-9A-Fa-f]{12})")
+
+
+def extract_address(instance_id: str | None) -> str | None:
+    """
+    Estrae l'indirizzo Bluetooth (12 cifre hex) da un InstanceId PnP di
+    Windows. Restituisce None se il pattern non viene trovato.
+    """
+
+    if not instance_id:
+        return None
+
+    match = _ADDRESS_PATTERN.search(instance_id)
+
+    if not match:
+        return None
+
+    return match.group(1).upper()
 
 
 class BluetoothCollector:
@@ -81,6 +107,7 @@ class BluetoothCollector:
                     id=instance_id,
                     name=name,
                     status=status,
+                    address=extract_address(instance_id),
                 )
             )
 
@@ -91,10 +118,18 @@ class BluetoothCollector:
         Interroga ogni dispositivo Bluetooth per la percentuale di
         batteria riportata a Windows (quando disponibile).
 
-        Restituisce una BatteryReading per ogni dispositivo che espone
+        Restituisce una BatteryReading per ogni nodo PnP che espone
         davvero un valore di batteria: i dispositivi che non lo
         riportano (o non sono al momento connessi) vengono scartati
         anziche' produrre letture false.
+
+        device_id qui e' l'indirizzo Bluetooth estratto dall'InstanceId
+        (es. "50C275770AE8"), non l'InstanceId grezzo: un device
+        "dual mode" (classico + BLE) puo' comparire come due nodi PnP
+        diversi con InstanceId diversi ma stesso indirizzo, e la
+        batteria spesso arriva dal nodo BLE mentre discover() elenca
+        quello classico. Usare l'indirizzo permette di ricollegare la
+        lettura al Device giusto (Device.address).
         """
 
         command = (
@@ -136,6 +171,7 @@ class BluetoothCollector:
         now = datetime.now()
 
         readings: list[BatteryReading] = []
+        seen_addresses = set()
 
         for item in raw_items:
 
@@ -162,9 +198,20 @@ class BluetoothCollector:
             except (TypeError, ValueError):
                 continue
 
+            address = extract_address(instance_id)
+            device_id = address or instance_id
+
+            if device_id in seen_addresses:
+                # Lo stesso device puo' avere piu' nodi PnP che
+                # riportano tutti la batteria (raro ma possibile):
+                # teniamo solo la prima lettura.
+                continue
+
+            seen_addresses.add(device_id)
+
             readings.append(
                 BatteryReading(
-                    device_id=instance_id,
+                    device_id=device_id,
                     battery_percent=battery_percent,
                     timestamp=now,
                 )
@@ -176,20 +223,33 @@ class BluetoothCollector:
 if __name__ == "__main__":
     collector = BluetoothCollector()
 
+    devices = collector.discover()
+
     print("=== Dispositivi Bluetooth trovati ===")
-    for device in collector.discover():
-        print(f"- {device.name} ({device.status}) [{device.id}]")
+    for device in devices:
+        print(
+            f"- {device.name} ({device.status}) "
+            f"[addr={device.address}] [{device.id}]"
+        )
 
     print()
     print("=== Livelli batteria disponibili ===")
     readings = collector.read_battery_levels()
 
+    devices_by_address = {
+        device.address: device
+        for device in devices
+        if device.address
+    }
+
     if not readings:
         print("Nessun dispositivo ha riportato un livello di batteria.")
     else:
         for reading in readings:
+            device = devices_by_address.get(reading.device_id)
+            label = device.name if device else "(nome sconosciuto)"
             print(
-                f"- {reading.device_id}: "
+                f"- {label} [{reading.device_id}]: "
                 f"{reading.battery_percent}% "
                 f"({reading.timestamp})"
             )
