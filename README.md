@@ -189,13 +189,13 @@ Bluetooth Devices
 
 ### BLE Presence Layer
 
-The current implementation uses a dedicated BLE monitoring pipeline:
+The current implementation uses a dedicated presence-monitoring pipeline. `BluetoothWatcher` (C#) lives inside this same repository, under [`BluetoothWatcher/`](./BluetoothWatcher) (see [Getting Started](#getting-started)):
 
 ```text
-MX Master 2S
+Bluetooth device (BLE or classic)
         |
         v
-BluetoothWatcher (C#)
+BluetoothWatcher (C#, ./BluetoothWatcher)
         |
         v
 ble-events.jsonl
@@ -213,6 +213,40 @@ Device state mapping:
 Connected    → online=True
 Disconnected → online=False
 ```
+
+---
+
+## Getting Started
+
+BTBatteryLab has two parts that run side by side, both living in this one repository: a C# watcher that talks to the Windows Bluetooth APIs, and a Python collector that reads and combines the battery data.
+
+### Prerequisites
+
+- Windows 10/11
+- [.NET 8 SDK](https://dotnet.microsoft.com/download) (for `BluetoothWatcher`)
+- Python 3.11+ (for the collector)
+
+### 1. Run the BLE/presence watcher (C#)
+
+```powershell
+cd BluetoothWatcher
+dotnet run
+```
+
+This discovers your paired Bluetooth devices — both BLE and classic/BR-EDR — tracks their connection status in real time, and writes events to `Documents\BTBatteryLabData\ble-events.jsonl`.
+
+### 2. Run the collector (Python)
+
+```powershell
+pip install -e .
+python -m btbatterylab.main
+```
+
+This follows that same `ble-events.jsonl` file live, and polls Windows PnP in the background (every 5 minutes by default, or immediately after a classic device connects) to read battery levels for devices that don't expose them over BLE — earbuds and headsets, mostly.
+
+> **Tip:** start the Python collector before `dotnet run` if you can. The collector only follows *new* lines written after it starts, so if the watcher's initial "device found" events are written first, that device's online/offline status stays unknown (`?`) until the next real connect/disconnect.
+
+Neither part is packaged for end users yet — this is still an early-development setup meant for running from source.
 
 ---
 

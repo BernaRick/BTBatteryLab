@@ -64,10 +64,10 @@ ConnectionStatusChanged
 Architecture:
 
 ```text
-MX Master 2S
+Bluetooth device (BLE or classic)
         |
         v
-BluetoothWatcher (C#)
+BluetoothWatcher (C#, ./BluetoothWatcher)
         |
         v
 ble-events.jsonl
@@ -81,6 +81,8 @@ BlePresenceMonitor
         v
 DeviceStatus
 ```
+
+`BluetoothWatcher` lives in this same repository under [`BluetoothWatcher/`](../BluetoothWatcher) — it used to be a separate repo, but was folded in (with its full commit history) so there is a single project to build and run. See [Getting Started](../README.md#getting-started) in the root README for how to run it.
 
 Device state mapping:
 
