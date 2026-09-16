@@ -225,8 +225,15 @@ BTBatteryLab has two parts that run side by side, both living in this one reposi
 - Windows 10/11
 - [.NET 8 SDK](https://dotnet.microsoft.com/download) (for `BluetoothWatcher`)
 - Python 3.11+ (for the collector)
+- A virtual environment with the package installed: `python -m venv .venv` then `.venv\Scripts\pip install -e .`
 
-### 1. Run the BLE/presence watcher (C#)
+### Quick start: `run.bat`
+
+Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below), each in its own console window. There's no packaged single `.exe` yet — see the roadmap.
+
+### Manual start (or if you want to see what `run.bat` does)
+
+#### 1. Run the BLE/presence watcher (C#)
 
 ```powershell
 cd BluetoothWatcher
@@ -235,11 +242,10 @@ dotnet run
 
 This discovers your paired Bluetooth devices — both BLE and classic/BR-EDR — tracks their connection status in real time, and writes events to `Documents\BTBatteryLabData\ble-events.jsonl`.
 
-### 2. Run the collector (Python)
+#### 2. Run the collector (Python)
 
 ```powershell
-pip install -e .
-python -m btbatterylab.main
+.venv\Scripts\python.exe -m btbatterylab.main
 ```
 
 This follows that same `ble-events.jsonl` file live, and polls Windows PnP in the background (every 5 minutes by default, or immediately after a classic device connects) to read battery levels for devices that don't expose them over BLE — earbuds and headsets, mostly.
@@ -260,6 +266,8 @@ Neither part is packaged for end users yet — this is still an early-developmen
 - JSONL event pipeline ✅
 - Battery collection ✅
 - SQLite database ✅
+- Simplified startup (`run.bat`) ✅
+- Standalone `.exe` packaging (single double-click, no console windows) 🔄
 - CSV export
 - Logging engine
 
