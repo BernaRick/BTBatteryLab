@@ -211,8 +211,15 @@ class BluetoothCollector:
 
         now = datetime.now()
 
-        readings: list[BatteryReading] = []
-        seen_addresses = set()
+        # Lo stesso device puo' avere piu' nodi PnP che riportano
+        # ciascuno un valore di batteria (es. il nodo Hands-Free e un
+        # altro nodo BLE-correlato), non sempre allineati - e Windows
+        # a volte scrive l'indirizzo con maiuscole diverse a seconda
+        # del nodo. Raggruppiamo per indirizzo normalizzato e per
+        # ognuno teniamo la lettura con il timestamp piu' recente,
+        # invece del primo che capita nell'ordine (arbitrario) con
+        # cui Get-PnpDevice restituisce i nodi.
+        best_by_device: dict[str, tuple[int, datetime]] = {}
 
         for item in raw_items:
 
@@ -229,14 +236,7 @@ class BluetoothCollector:
             except (TypeError, ValueError):
                 continue
 
-            device_id = address or instance_id
-
-            if device_id in seen_addresses:
-                # Lo stesso device puo' avere piu' nodi PnP che
-                # riportano tutti la batteria: teniamo solo il primo.
-                continue
-
-            seen_addresses.add(device_id)
+            device_id = address.upper() if address else instance_id
 
             timestamp = now
 
@@ -261,15 +261,20 @@ class BluetoothCollector:
                 except ValueError:
                     timestamp = now
 
-            readings.append(
-                BatteryReading(
-                    device_id=device_id,
-                    battery_percent=battery_percent,
-                    timestamp=timestamp,
-                )
-            )
+            current_best = best_by_device.get(device_id)
 
-        return readings
+            if current_best is None or timestamp > current_best[1]:
+                best_by_device[device_id] = (battery_percent, timestamp)
+
+        return [
+            BatteryReading(
+                device_id=device_id,
+                battery_percent=battery_percent,
+                timestamp=timestamp,
+            )
+            for device_id, (battery_percent, timestamp)
+            in best_by_device.items()
+        ]
 
 
 if __name__ == "__main__":
