@@ -7,11 +7,16 @@ from btbatterylab.models.device import Device
 from btbatterylab.models.battery_reading import BatteryReading
 
 # Undocumented but widely used Windows device property that exposes the
-# battery level reported by a Bluetooth device (classic and BLE) once it
-# has been surfaced by the driver. It is not part of the public PnP
-# property set, so it is only present on devices that actually report a
-# battery level to Windows.
-BATTERY_PROPERTY_KEY = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2"
+# battery level reported by a Bluetooth device once it has been surfaced
+# by the driver. It is not part of the public PnP property set, so it is
+# only present on the specific PnP node that actually tracks it - which
+# varies by device: BLE mice/keyboards usually expose it on their BTHLE
+# node, while classic audio devices (earbuds, headsets) expose it on
+# their Hands-Free AudioGateway node (Class "System", *not* "Bluetooth").
+# PID 2 is the level (0-100); PID 7 is the timestamp of the last update,
+# which lets us know how stale a reading is instead of guessing.
+BATTERY_LEVEL_KEY = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2"
+BATTERY_UPDATED_KEY = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 7"
 
 EXCLUDED_KEYWORDS = [
     "Generic Attribute",
@@ -35,7 +40,8 @@ _ADDRESS_PATTERN = re.compile(r"DEV_([0-9A-Fa-f]{12})")
 def extract_address(instance_id: str | None) -> str | None:
     """
     Estrae l'indirizzo Bluetooth (12 cifre hex) da un InstanceId PnP di
-    Windows. Restituisce None se il pattern non viene trovato.
+    Windows nel formato "classico" (...DEV_<address>...). Usata da
+    discover(). Restituisce None se il pattern non viene trovato.
     """
 
     if not instance_id:
@@ -115,36 +121,57 @@ class BluetoothCollector:
 
     def read_battery_levels(self) -> list[BatteryReading]:
         """
-        Interroga ogni dispositivo Bluetooth per la percentuale di
-        batteria riportata a Windows (quando disponibile).
+        Interroga i nodi PnP di tutti i dispositivi Bluetooth (non solo
+        quelli in Class='Bluetooth': un device classico come cuffie/
+        auricolari riporta spesso la batteria sul suo nodo Hands-Free
+        AudioGateway, che e' Class='System') per trovare chi espone
+        davvero un valore di batteria a Windows.
 
-        Restituisce una BatteryReading per ogni nodo PnP che espone
-        davvero un valore di batteria: i dispositivi che non lo
-        riportano (o non sono al momento connessi) vengono scartati
-        anziche' produrre letture false.
+        Restituisce una BatteryReading per ogni indirizzo Bluetooth che
+        riporta un valore, con il timestamp REALE dell'ultimo
+        aggiornamento visto da Windows (non "adesso"): per un device
+        classico non connesso al momento della query, questo valore
+        puo' risalire a minuti o ore prima, ed e' corretto che il dato
+        lo rifletta invece di spacciarlo per una lettura fresca.
 
-        device_id qui e' l'indirizzo Bluetooth estratto dall'InstanceId
-        (es. "50C275770AE8"), non l'InstanceId grezzo: un device
-        "dual mode" (classico + BLE) puo' comparire come due nodi PnP
-        diversi con InstanceId diversi ma stesso indirizzo, e la
-        batteria spesso arriva dal nodo BLE mentre discover() elenca
-        quello classico. Usare l'indirizzo permette di ricollegare la
-        lettura al Device giusto (Device.address).
+        device_id e' l'indirizzo Bluetooth (via DEVPKEY_Bluetooth_
+        DeviceAddress, piu' affidabile di un parsing dell'InstanceId
+        visto quanto sono eterogenei i formati tra i vari nodi), cosi'
+        da ricollegare la lettura al Device giusto (Device.address)
+        anche quando arriva da un nodo diverso da quello scoperto in
+        discover().
         """
 
         command = (
             "Get-PnpDevice | "
-            "Where-Object {$_.Class -eq 'Bluetooth'} | "
+            "Where-Object {$_.InstanceId -like 'BTH*'} | "
             "ForEach-Object {"
-            "    $level = (Get-PnpDeviceProperty "
-            f"        -InstanceId $_.InstanceId "
-            f"        -KeyName '{BATTERY_PROPERTY_KEY}' "
+            "    $address = (Get-PnpDeviceProperty "
+            "        -InstanceId $_.InstanceId "
+            "        -KeyName 'DEVPKEY_Bluetooth_DeviceAddress' "
             "        -ErrorAction SilentlyContinue"
             "    ).Data;"
-            "    [PSCustomObject]@{"
-            "        FriendlyName = $_.FriendlyName;"
-            "        InstanceId   = $_.InstanceId;"
-            "        BatteryLevel = $level"
+            "    $level = (Get-PnpDeviceProperty "
+            "        -InstanceId $_.InstanceId "
+            f"        -KeyName '{BATTERY_LEVEL_KEY}' "
+            "        -ErrorAction SilentlyContinue"
+            "    ).Data;"
+            "    $updatedRaw = (Get-PnpDeviceProperty "
+            "        -InstanceId $_.InstanceId "
+            f"        -KeyName '{BATTERY_UPDATED_KEY}' "
+            "        -ErrorAction SilentlyContinue"
+            "    ).Data;"
+            "    $updated = if ($updatedRaw) "
+            "        { $updatedRaw.ToString('yyyy-MM-ddTHH:mm:ss.ffffffK') } "
+            "        else { $null };"
+            "    if ($level -ne $null) {"
+            "        [PSCustomObject]@{"
+            "            FriendlyName   = $_.FriendlyName;"
+            "            InstanceId     = $_.InstanceId;"
+            "            Address        = $address;"
+            "            BatteryLevel   = $level;"
+            "            BatteryUpdated = $updated"
+            "        }"
             "    }"
             "} | "
             "ConvertTo-Json -Depth 3"
@@ -163,7 +190,14 @@ class BluetoothCollector:
         if result.returncode != 0:
             raise RuntimeError(result.stderr)
 
-        raw_items = json.loads(result.stdout)
+        stdout = result.stdout.strip()
+        raw_items = json.loads(stdout) if stdout else []
+
+        # "ForEach-Object" senza nessun oggetto emesso produce $null,
+        # che ConvertTo-Json serializza come la stringa "null" (non
+        # una stringa vuota): nessun device ha riportato batteria.
+        if raw_items is None:
+            raw_items = []
 
         if isinstance(raw_items, dict):
             raw_items = [raw_items]
@@ -175,22 +209,12 @@ class BluetoothCollector:
 
         for item in raw_items:
 
-            name = item.get("FriendlyName")
             instance_id = item.get("InstanceId")
             battery_level = item.get("BatteryLevel")
+            address = item.get("Address")
+            updated_raw = item.get("BatteryUpdated")
 
-            if not name or instance_id is None:
-                continue
-
-            if any(
-                keyword.lower() in name.lower()
-                for keyword in EXCLUDED_KEYWORDS
-            ):
-                continue
-
-            if battery_level is None:
-                # Property not present for this device: it does not
-                # report battery, or it is not currently connected.
+            if instance_id is None or battery_level is None:
                 continue
 
             try:
@@ -198,22 +222,32 @@ class BluetoothCollector:
             except (TypeError, ValueError):
                 continue
 
-            address = extract_address(instance_id)
             device_id = address or instance_id
 
             if device_id in seen_addresses:
                 # Lo stesso device puo' avere piu' nodi PnP che
-                # riportano tutti la batteria (raro ma possibile):
-                # teniamo solo la prima lettura.
+                # riportano tutti la batteria: teniamo solo il primo.
                 continue
 
             seen_addresses.add(device_id)
+
+            timestamp = now
+
+            if updated_raw:
+                try:
+                    # normalizza "Z" in "+00:00": alcune versioni di
+                    # Python precedenti alla 3.11 non accettano "Z" in
+                    # fromisoformat().
+                    normalized = updated_raw.replace("Z", "+00:00")
+                    timestamp = datetime.fromisoformat(normalized)
+                except ValueError:
+                    timestamp = now
 
             readings.append(
                 BatteryReading(
                     device_id=device_id,
                     battery_percent=battery_percent,
-                    timestamp=now,
+                    timestamp=timestamp,
                 )
             )
 
@@ -245,11 +279,21 @@ if __name__ == "__main__":
     if not readings:
         print("Nessun dispositivo ha riportato un livello di batteria.")
     else:
+        now = datetime.now()
+
         for reading in readings:
             device = devices_by_address.get(reading.device_id)
             label = device.name if device else "(nome sconosciuto)"
+
+            age_minutes = (now - reading.timestamp).total_seconds() / 60
+            freshness = (
+                "live/recente"
+                if age_minutes < 2
+                else f"vecchia di {age_minutes:.0f} min"
+            )
+
             print(
                 f"- {label} [{reading.device_id}]: "
                 f"{reading.battery_percent}% "
-                f"({reading.timestamp})"
+                f"({reading.timestamp}, {freshness})"
             )
