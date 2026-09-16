@@ -258,8 +258,8 @@ Neither part is packaged for end users yet — this is still an early-developmen
 - BLE presence monitoring ✅
 - Online/offline device state ✅
 - JSONL event pipeline ✅
-- Battery collection 🔄
-- SQLite database
+- Battery collection ✅
+- SQLite database ✅
 - CSV export
 - Logging engine
 

@@ -151,29 +151,49 @@ Responsibilities:
 
 Technology:
 
-- SQLite
+- SQLite (`src/btbatterylab/storage/sqlite_storage.py`, `SqliteStorage`)
 
-Tables:
+By default the database file lives next to `ble-events.jsonl`
+(`Documents/BTBatteryLabData/btbatterylab.db`), one connection shared
+across threads (WAL mode + an internal lock), since `UnifiedCollector`
+writes from both the JSONL-tailing thread and the PnP polling thread.
+
+Every battery reading observed by either channel is recorded as-is —
+not just the one that "wins" the live in-memory view in
+`UnifiedCollector` — so `battery_log` keeps the full raw history
+needed later for drain rate / runtime / trend analysis.
+
+Tables (actual schema, address is the primary key — a device's
+Bluetooth address, uppercase hex with no separators, e.g.
+`FF8EDDAAF1CD`):
 
 ### devices
 
 ```sql
-id
-name
-address
-type
-first_seen
-last_seen
+CREATE TABLE devices (
+    address     TEXT PRIMARY KEY,
+    name        TEXT,
+    first_seen  TEXT NOT NULL,  -- ISO 8601
+    last_seen   TEXT NOT NULL   -- ISO 8601, never moves backwards
+)
 ```
 
 ### battery_log
 
 ```sql
-id
-device_id
-timestamp
-battery_percent
+CREATE TABLE battery_log (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    address          TEXT NOT NULL REFERENCES devices(address),
+    timestamp        TEXT NOT NULL,  -- ISO 8601
+    battery_percent  INTEGER NOT NULL,
+    source           TEXT NOT NULL,  -- "ble" o "pnp"
+    UNIQUE(address, timestamp, source)
+)
 ```
+
+A `type` column (ble / classic / dual) is a natural future addition
+once device-type classification exists somewhere in the collector —
+not populated today.
 
 ---
 
@@ -287,7 +307,7 @@ Phase 1 - Foundation
     ├── BLE Presence Monitoring     ✅
     ├── Device Availability Model   ✅
     ├── JSONL Event Pipeline        ✅
-    ├── Battery Collection          🔄
-    ├── SQLite Storage              ⏳
+    ├── Battery Collection          ✅
+    ├── SQLite Storage              ✅
     └── Analytics                   ⏳
 ```

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from btbatterylab.collector.bluetooth_collector import BluetoothCollector
 from btbatterylab.monitoring.tail_monitor import JsonlTailMonitor
+from btbatterylab.storage.sqlite_storage import SqliteStorage
 
 # Spaziatura minima tra un poll PnP "svegliato" da un evento di
 # connessione e il successivo, cosi' che piu' device classici che si
@@ -29,9 +30,12 @@ def _is_generic_name(name: str | None) -> bool:
 class DeviceState:
     """
     Vista corrente, per indirizzo Bluetooth, dello stato combinato dei
-    due canali di raccolta. Non e' ancora persistita da nessuna parte
-    (lo storage SQLite e' un passo successivo): per ora e' la fonte di
-    verita' in memoria durante l'esecuzione di UnifiedCollector.
+    due canali di raccolta - la fonte di verita' in memoria durante
+    l'esecuzione di UnifiedCollector, usata per la stampa a console.
+
+    Ogni lettura di batteria osservata (non solo quella che "vince" in
+    questa vista) viene comunque registrata su SQLite via SqliteStorage
+    - vedi _handle_ble_event/_poll_pnp_battery.
     """
 
     address: str
@@ -70,12 +74,20 @@ class UnifiedCollector:
         jsonl_path: str | Path,
         poll_interval_seconds: float = 300.0,
         failure_retry_seconds: float = 30.0,
+        db_path: str | Path | None = None,
     ) -> None:
 
         self.poll_interval_seconds = poll_interval_seconds
         self.failure_retry_seconds = failure_retry_seconds
 
+        # Default: lo stesso posto del JSONL, cosi' non serve
+        # configurare due path separati finche' non esiste un vero
+        # configuration system.
+        if db_path is None:
+            db_path = Path(jsonl_path).with_name("btbatterylab.db")
+
         self._collector = BluetoothCollector()
+        self._storage = SqliteStorage(db_path)
         self._states: dict[str, DeviceState] = {}
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -138,9 +150,17 @@ class UnifiedCollector:
             state.last_seen = timestamp
             self._maybe_update_name(state, name)
 
+            self._storage.record_device_seen(address, state.name, timestamp)
+
             if battery_percent is not None:
+                battery_percent = int(battery_percent)
+
                 self._maybe_update_battery(
-                    state, int(battery_percent), timestamp, source="ble"
+                    state, battery_percent, timestamp, source="ble"
+                )
+
+                self._storage.record_battery(
+                    address, battery_percent, timestamp, source="ble"
                 )
 
         self._print_state(address)
@@ -192,8 +212,19 @@ class UnifiedCollector:
                     state, names_by_address.get(address)
                 )
 
+                self._storage.record_device_seen(
+                    address, state.name, reading.timestamp
+                )
+
                 self._maybe_update_battery(
                     state,
+                    reading.battery_percent,
+                    reading.timestamp,
+                    source="pnp",
+                )
+
+                self._storage.record_battery(
+                    address,
                     reading.battery_percent,
                     reading.timestamp,
                     source="pnp",
@@ -352,3 +383,4 @@ class UnifiedCollector:
     def stop(self) -> None:
         self._stop_event.set()
         self._tail_monitor.stop()
+        self._storage.close()
