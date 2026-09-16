@@ -26,9 +26,33 @@ string logFile =
         dataDirectory,
         "ble-events.jsonl");
 
-if (File.Exists(logFile))
+// Azzeriamo il log ad ogni avvio per non farlo crescere all'infinito
+// tra una sessione e l'altra - JsonlTailMonitor lato Python comunque
+// ignora tutto il contenuto precedente (si mette in fondo al file
+// appena parte), quindi non e' funzionalmente necessario, solo
+// housekeeping.
+//
+// Va tentato con cautela: run.bat avvia apposta il collector Python
+// PRIMA di questo processo (altrimenti si perdono gli eventi
+// "Startup" iniziali - vedi README), quindi quando arriviamo qui il
+// file potrebbe gia' essere aperto in lettura da Python, e su
+// Windows File.Delete su un file aperto da un altro processo lancia
+// IOException invece di essere ignorato in silenzio come su Linux.
+// In quel caso continuiamo semplicemente in append: meglio un file
+// che si allunga di qualche riga vecchia che un crash all'avvio.
+try
 {
-    File.Delete(logFile);
+    if (File.Exists(logFile))
+    {
+        File.Delete(logFile);
+    }
+}
+catch (IOException ex)
+{
+    Console.WriteLine(
+        $"Impossibile azzerare il log esistente (probabilmente in " +
+        $"uso dal collector Python gia' avviato): {ex.Message}");
+    Console.WriteLine("Continuo aggiungendo gli eventi in coda al file esistente.");
 }
 
 object logLock = new();
