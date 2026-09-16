@@ -147,20 +147,17 @@ class BluetoothCollector:
             "Where-Object "
             "{$_.Class -eq 'Bluetooth' -or $_.Service -eq 'BthHFEnum'} | "
             "ForEach-Object {"
-            "    $address = (Get-PnpDeviceProperty "
+            "    $properties = Get-PnpDeviceProperty "
             "        -InstanceId $_.InstanceId "
-            "        -KeyName 'DEVPKEY_Bluetooth_DeviceAddress' "
-            "        -ErrorAction SilentlyContinue"
+            "        -ErrorAction SilentlyContinue;"
+            "    $address = ($properties | "
+            "        Where-Object KeyName -eq "
+            "        'DEVPKEY_Bluetooth_DeviceAddress').Data;"
+            "    $level = ($properties | "
+            f"        Where-Object KeyName -eq '{BATTERY_LEVEL_KEY}'"
             "    ).Data;"
-            "    $level = (Get-PnpDeviceProperty "
-            "        -InstanceId $_.InstanceId "
-            f"        -KeyName '{BATTERY_LEVEL_KEY}' "
-            "        -ErrorAction SilentlyContinue"
-            "    ).Data;"
-            "    $updatedRaw = (Get-PnpDeviceProperty "
-            "        -InstanceId $_.InstanceId "
-            f"        -KeyName '{BATTERY_UPDATED_KEY}' "
-            "        -ErrorAction SilentlyContinue"
+            "    $updatedRaw = ($properties | "
+            f"        Where-Object KeyName -eq '{BATTERY_UPDATED_KEY}'"
             "    ).Data;"
             "    $updated = if ($updatedRaw) "
             "        { $updatedRaw.ToString('yyyy-MM-ddTHH:mm:ss.ffffffK') } "
@@ -178,15 +175,24 @@ class BluetoothCollector:
             "ConvertTo-Json -Depth 3"
         )
 
-        result = subprocess.run(
-            [
-                "powershell",
-                "-Command",
-                command,
-            ],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-Command",
+                    command,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as ex:
+            raise RuntimeError(
+                "Interrogazione batteria via PowerShell troppo lenta "
+                "(oltre 30s): controlla quanti device Bluetooth sono "
+                "accoppiati sul sistema, potrebbe servire restringere "
+                "ulteriormente il filtro."
+            ) from ex
 
         if result.returncode != 0:
             raise RuntimeError(result.stderr)
