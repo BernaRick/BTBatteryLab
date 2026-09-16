@@ -12,6 +12,31 @@ Instead of only displaying a battery percentage, BTBatteryLab collects historica
 
 ---
 
+## Current Status
+
+Early development (Alpha)
+
+The project originated from a real-world investigation into abnormal battery drain of Bluetooth devices and evolved into a generic Bluetooth battery analytics platform.
+
+### Latest Milestone ✅
+
+BTBatteryLab now supports real-time Bluetooth device presence detection using native Windows BLE APIs.
+
+Validated scenario:
+
+```text
+Mouse OFF  → online=False
+Mouse ON   → online=True
+```
+
+Current reference device:
+
+```text
+Logitech MX Master 2S
+```
+
+---
+
 ## Why BTBatteryLab?
 
 Windows can display the current battery level of some Bluetooth devices, but it does not provide:
@@ -22,12 +47,41 @@ Windows can display the current battery level of some Bluetooth devices, but it 
 - Charging statistics
 - Battery health trends
 - Multi-device monitoring
+- Device presence history
+- Online/offline tracking
 
 BTBatteryLab fills that gap.
 
 ---
 
 ## Features
+
+### BLE Presence Monitoring ✅
+
+Monitor Bluetooth device availability in real time.
+
+Implemented using:
+
+```text
+BluetoothLEDevice
+ConnectionStatusChanged
+```
+
+Capabilities:
+
+- Real-time online detection
+- Real-time offline detection
+- Event-based architecture
+- JSONL event pipeline
+
+Example:
+
+```text
+Connected    → online=True
+Disconnected → online=False
+```
+
+---
 
 ### Device Discovery
 
@@ -51,6 +105,7 @@ Collect battery telemetry over time.
 
 Example:
 
+```text
 2026-08-28 15:00
 OPPO Enco Air2
 Battery: 80%
@@ -58,6 +113,7 @@ Battery: 80%
 2026-08-28 15:05
 OPPO Enco Air2
 Battery: 78%
+```
 
 ---
 
@@ -93,41 +149,70 @@ Planned dashboard features:
 - Runtime estimates
 - Historical charts
 - Multi-device overview
-- Battery health indicators
+- Device health indicators
+- Online/offline device status
 
 ---
 
 ## Architecture
 
-BTBatteryLab consists of five main components:
+BTBatteryLab follows a modular architecture.
 
-BTBatteryLab
+```text
+Bluetooth Devices
+        |
+        v
++-------------------+
+| BLE Presence Layer|
++-------------------+
+        |
+        v
++-------------------+
+|     Collector     |
++-------------------+
+        |
+        v
++-------------------+
+|      Storage      |
++-------------------+
+        |
+        v
++-------------------+
+|     Analytics     |
++-------------------+
+        |
+        v
++-------------------+
+|     Dashboard     |
++-------------------+
+```
 
-├── collector
-├── storage
-├── analytics
-├── dashboard
-├── notifications
+### BLE Presence Layer
 
-### Collector
+The current implementation uses a dedicated BLE monitoring pipeline:
 
-Discovers Bluetooth devices and collects battery information.
+```text
+MX Master 2S
+        |
+        v
+BluetoothWatcher (C#)
+        |
+        v
+ble-events.jsonl
+        |
+        v
+BTBatteryLab (Python)
+        |
+        v
+DeviceStatus
+```
 
-### Storage
+Device state mapping:
 
-Persists device and battery telemetry.
-
-### Analytics
-
-Generates runtime and health metrics.
-
-### Dashboard
-
-Visualizes battery data and device status.
-
-### Notifications
-
-Provides battery alerts and warnings.
+```text
+Connected    → online=True
+Disconnected → online=False
+```
 
 ---
 
@@ -136,7 +221,10 @@ Provides battery alerts and warnings.
 ### v0.1 Alpha
 
 - Device discovery ✅
-- Battery collection
+- BLE presence monitoring ✅
+- Online/offline device state ✅
+- JSONL event pipeline ✅
+- Battery collection 🔄
 - SQLite database
 - CSV export
 - Logging engine
@@ -145,6 +233,7 @@ Provides battery alerts and warnings.
 
 - Streamlit dashboard
 - Device overview
+- Live battery status
 - History charts
 
 ### v0.3
@@ -155,9 +244,15 @@ Provides battery alerts and warnings.
 
 ### v0.4
 
+- Battery health analytics
+- Degradation metrics
+- Trend analysis
+
+### v0.5
+
 - Notifications
 - Low battery alerts
-- Device health metrics
+- Offline device alerts
 
 ### v1.0
 
@@ -165,6 +260,7 @@ Provides battery alerts and warnings.
 - Dashboard
 - Analytics engine
 - Multi-device support
+- Documentation
 
 ---
 
@@ -184,19 +280,25 @@ BTBatteryLab is not tied to any manufacturer.
 
 The goal is to support any Bluetooth device exposing battery information through Windows.
 
+Examples:
+
+- Earbuds
+- Headsets
+- Mice
+- Keyboards
+- Controllers
+
+### Modular
+
+Every component should be independently testable and replaceable.
+
+### Event Driven
+
+Device presence is propagated through events instead of periodic polling.
+
 ### Data Driven
 
 All analytics are based on collected telemetry rather than static estimates.
-
----
-
-## Status
-
-Current status:
-
-Early development (Alpha)
-
-The project originated from a real-world investigation into abnormal battery drain of Bluetooth earbuds and evolved into a generic Bluetooth battery analytics platform.
 
 ---
 

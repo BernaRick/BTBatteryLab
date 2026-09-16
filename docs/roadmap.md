@@ -16,7 +16,7 @@ Goal:
 
 Create a functional replacement for manual PowerShell battery logging.
 
-Features:
+### Features
 
 - Bluetooth device discovery
 - Battery information collection
@@ -25,7 +25,64 @@ Features:
 - Configuration system
 - Logging engine
 
-Status:
+### Step 2.1 - BLE Presence Monitoring ✅
+
+Objective:
+
+Implement reliable Bluetooth device presence detection.
+
+Implemented:
+
+- BluetoothLEDevice integration
+- ConnectionStatusChanged monitoring
+- JSONL event logging
+- DeviceStatus model
+- BlePresenceMonitor
+- JsonlTailMonitor
+- End-to-end validation between BluetoothWatcher and BTBatteryLab
+
+Validated scenario:
+
+```text
+Mouse OFF  → online=False
+Mouse ON   → online=True
+```
+
+Architecture:
+
+```text
+MX Master 2S
+    ↓
+BluetoothLEDevice
+    ↓
+ConnectionStatusChanged
+    ↓
+JSONL
+    ↓
+BTBatteryLab
+    ↓
+DeviceStatus
+```
+
+### Step 2.2 - Battery Collection Gating
+
+Objective:
+
+Collect battery information only when the device is online.
+
+Planned:
+
+```text
+Device online
+        ↓
+Collect battery data
+
+Device offline
+        ↓
+Skip collection
+```
+
+### Status
 
 🟡 In Progress
 
@@ -35,15 +92,16 @@ Status:
 
 ## Version 0.2
 
-Features:
+### Features
 
 - Streamlit dashboard
 - Device overview page
 - Live battery status
 - Historical battery charts
 - Device filtering
+- Online/offline device indicators
 
-Status:
+### Status
 
 ⚪ Planned
 
@@ -53,15 +111,16 @@ Status:
 
 ## Version 0.3
 
-Features:
+### Features
 
 - Drain rate calculation
 - Runtime estimation
 - Charge session detection
 - Discharge session detection
 - Daily statistics
+- Presence-aware analytics
 
-Status:
+### Status
 
 ⚪ Planned
 
@@ -71,14 +130,14 @@ Status:
 
 ## Version 0.4
 
-Features:
+### Features
 
 - Battery health scoring
 - Battery degradation detection
 - Long-term trend analysis
 - Anomaly detection
 
-Status:
+### Status
 
 ⚪ Planned
 
@@ -88,14 +147,15 @@ Status:
 
 ## Version 0.5
 
-Features:
+### Features
 
 - Low battery alerts
 - Desktop notifications
 - Critical battery warnings
 - Configurable thresholds
+- Offline device alerts
 
-Status:
+### Status
 
 ⚪ Planned
 
@@ -105,7 +165,7 @@ Status:
 
 ## Version 1.0
 
-Features:
+### Features
 
 - Stable API
 - Full dashboard
@@ -114,7 +174,7 @@ Features:
 - Documentation
 - Public release
 
-Status:
+### Status
 
 ⚪ Planned
 
@@ -124,9 +184,12 @@ Status:
 
 Future research areas:
 
-- Tray application
-- Plugin system
+- System tray application
 - Vendor-specific integrations
 - Battery charge cycle tracking
 - Device benchmarking
+- Advanced battery health models
+- Multi-vendor support
 - Cross-platform support
+- Plugin system
+- Device telemetry APIs
