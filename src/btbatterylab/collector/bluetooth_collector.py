@@ -144,7 +144,8 @@ class BluetoothCollector:
 
         command = (
             "Get-PnpDevice | "
-            "Where-Object {$_.InstanceId -like 'BTH*'} | "
+            "Where-Object "
+            "{$_.Class -eq 'Bluetooth' -or $_.Service -eq 'BthHFEnum'} | "
             "ForEach-Object {"
             "    $address = (Get-PnpDeviceProperty "
             "        -InstanceId $_.InstanceId "
