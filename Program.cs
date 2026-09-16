@@ -207,6 +207,100 @@ void OnDeviceRemoved(string id)
     }
 }
 
+// --- Dispositivi classici (BR/EDR) ---
+//
+// Cuffie/auricolari come le OPPO Enco Air2 o le HD 450BT non hanno
+// un'interfaccia BLE utile: la loro batteria si legge solo lato
+// Python via PnP (BluetoothCollector.read_battery_levels()), non da
+// qui. Quello che possiamo fare qui e' tracciare la loro connessione
+// in tempo reale con l'equivalente classico di BluetoothLEDevice, e
+// scrivere lo stesso tipo di evento nel JSONL (senza BatteryPercent -
+// non e' un dato che questo processo sa leggere per un device
+// classico). Il lato Python, vedendo un evento "Connected" per un
+// device che non conosce come sorgente BLE, fa scattare un poll
+// batteria immediato invece di aspettare il timer.
+
+Dictionary<string, BluetoothDevice> trackedClassicDevices = new();
+
+void HandleClassicConnectionStatusChanged(BluetoothDevice device)
+{
+    string status = device.ConnectionStatus.ToString();
+
+    string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+
+    Console.WriteLine($"[{timestamp}] {device.Name} (classico): {status}");
+
+    LogEvent(
+        "ConnectionStatusChanged",
+        status,
+        device.Name,
+        device.BluetoothAddress,
+        null);
+}
+
+async Task OnClassicDeviceAddedAsync(DeviceInformation info)
+{
+    BluetoothDevice? device;
+
+    try
+    {
+        device = await BluetoothDevice.FromIdAsync(info.Id);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(
+            $"Impossibile aprire (classico) {info.Name} ({info.Id}): " +
+            $"{ex.Message}");
+
+        return;
+    }
+
+    if (device is null)
+    {
+        return;
+    }
+
+    lock (trackedClassicDevices)
+    {
+        if (trackedClassicDevices.ContainsKey(info.Id))
+        {
+            device.Dispose();
+            return;
+        }
+
+        trackedClassicDevices[info.Id] = device;
+    }
+
+    string initialStatus = device.ConnectionStatus.ToString();
+
+    device.ConnectionStatusChanged += (_, _) =>
+        HandleClassicConnectionStatusChanged(device);
+
+    Console.WriteLine(
+        $"Trovato (classico): {device.Name} [{info.Id}] - " +
+        $"stato: {initialStatus}");
+
+    LogEvent(
+        "Startup",
+        initialStatus,
+        device.Name,
+        device.BluetoothAddress,
+        null);
+}
+
+void OnClassicDeviceRemoved(string id)
+{
+    lock (trackedClassicDevices)
+    {
+        if (trackedClassicDevices.TryGetValue(
+                id, out BluetoothDevice? device))
+        {
+            device.Dispose();
+            trackedClassicDevices.Remove(id);
+        }
+    }
+}
+
 Console.WriteLine("BTBatteryLab - BLE Watcher (tutti i dispositivi)");
 Console.WriteLine("------------------------------------------------");
 Console.WriteLine();
@@ -225,6 +319,18 @@ Console.WriteLine();
 
 watcher.Start();
 
+string classicSelector = BluetoothDevice.GetDeviceSelector();
+
+DeviceWatcher classicWatcher = DeviceInformation.CreateWatcher(classicSelector);
+
+classicWatcher.Added += async (_, info) => await OnClassicDeviceAddedAsync(info);
+classicWatcher.Removed += (_, update) => OnClassicDeviceRemoved(update.Id);
+
+Console.WriteLine("Avvio ricerca dispositivi classici accoppiati...");
+Console.WriteLine();
+
+classicWatcher.Start();
+
 Console.WriteLine();
 Console.WriteLine("Monitoring in corso.");
 Console.WriteLine("Premi ENTER per terminare.");
@@ -233,6 +339,7 @@ Console.WriteLine();
 Console.ReadLine();
 
 watcher.Stop();
+classicWatcher.Stop();
 
 lock (trackedDevices)
 {
@@ -242,4 +349,14 @@ lock (trackedDevices)
     }
 
     trackedDevices.Clear();
+}
+
+lock (trackedClassicDevices)
+{
+    foreach (BluetoothDevice device in trackedClassicDevices.Values)
+    {
+        device.Dispose();
+    }
+
+    trackedClassicDevices.Clear();
 }
