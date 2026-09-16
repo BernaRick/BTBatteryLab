@@ -62,9 +62,11 @@ class UnifiedCollector:
         self,
         jsonl_path: str | Path,
         poll_interval_seconds: float = 300.0,
+        failure_retry_seconds: float = 30.0,
     ) -> None:
 
         self.poll_interval_seconds = poll_interval_seconds
+        self.failure_retry_seconds = failure_retry_seconds
 
         self._collector = BluetoothCollector()
         self._states: dict[str, DeviceState] = {}
@@ -136,13 +138,19 @@ class UnifiedCollector:
 
     # --- canale "pnp" ---
 
-    def _poll_pnp_battery(self) -> None:
+    def _poll_pnp_battery(self) -> bool:
+        """
+        Restituisce True se il polling e' andato a buon fine, False
+        altrimenti (usato da _polling_loop per decidere se ritentare
+        subito invece di aspettare l'intero poll_interval_seconds).
+        """
+
         try:
             devices = self._collector.discover()
             readings = self._collector.read_battery_levels()
         except Exception as ex:
             print(f"[UnifiedCollector] Errore durante il polling PnP: {ex}")
-            return
+            return False
 
         names_by_address = {
             device.address: device.name
@@ -176,10 +184,19 @@ class UnifiedCollector:
         for address in updated_addresses:
             self._print_state(address)
 
+        return True
+
     def _polling_loop(self) -> None:
         while not self._stop_event.is_set():
-            self._poll_pnp_battery()
-            self._stop_event.wait(self.poll_interval_seconds)
+            success = self._poll_pnp_battery()
+
+            wait_seconds = (
+                self.poll_interval_seconds
+                if success
+                else self.failure_retry_seconds
+            )
+
+            self._stop_event.wait(wait_seconds)
 
     # --- helper condivisi ---
 

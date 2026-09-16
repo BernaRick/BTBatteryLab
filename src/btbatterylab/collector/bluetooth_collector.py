@@ -190,14 +190,16 @@ class BluetoothCollector:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=60,
             )
         except subprocess.TimeoutExpired as ex:
             raise RuntimeError(
                 "Interrogazione batteria via PowerShell troppo lenta "
-                "(oltre 30s): controlla quanti device Bluetooth sono "
-                "accoppiati sul sistema, potrebbe servire restringere "
-                "ulteriormente il filtro."
+                "(oltre 60s): puo' capitare se un device sta "
+                "connettendosi/disconnettendosi proprio in quel momento "
+                "(rallenta lo stack driver). Se persiste con tutti i "
+                "device stabili, potrebbe servire restringere ulteriormente "
+                "il filtro."
             ) from ex
 
         if result.returncode != 0:
