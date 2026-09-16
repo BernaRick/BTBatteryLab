@@ -66,15 +66,21 @@ class BluetoothCollector:
         )
 
 
-        result = subprocess.run(
-            [
-                "powershell",
-                "-Command",
-                command,
-            ],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-Command",
+                    command,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except subprocess.TimeoutExpired as ex:
+            raise RuntimeError(
+                "Discovery via PowerShell troppo lenta (oltre 15s)."
+            ) from ex
 
         if result.returncode != 0:
             raise RuntimeError(result.stderr)

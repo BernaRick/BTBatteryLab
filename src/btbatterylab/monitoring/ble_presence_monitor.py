@@ -48,7 +48,10 @@ class BlePresenceMonitor:
 
     def process_json_line(self, line: str) -> None:
         """
-        Processa una singola riga JSONL.
+        Processa una singola riga JSONL e stampa lo stato risultante.
+
+        La stampa vive qui (non in JsonlTailMonitor) perche' solo il
+        consumer conosce la forma del proprio stato interno.
         """
 
         line = line.strip()
@@ -59,6 +62,12 @@ class BlePresenceMonitor:
         event = json.loads(line)
 
         self.process_event(event)
+
+        print(
+            f"[STATE] "
+            f"online={self.status.online} "
+            f"last_change={self.status.last_change}"
+        )
 
     def load_file(self, file_path: str | Path) -> DeviceStatus:
         """

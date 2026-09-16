@@ -1,24 +1,28 @@
 import time
 from pathlib import Path
 from threading import Event
+from typing import Protocol
 
-from btbatterylab.monitoring.ble_presence_monitor import (
-    BlePresenceMonitor,
-)
+
+class JsonlConsumer(Protocol):
+    def process_json_line(self, line: str) -> None: ...
 
 
 class JsonlTailMonitor:
     """
     Segue in tempo reale un file JSONL.
 
-    Quando viene aggiunta una nuova riga,
-    la inoltra al BlePresenceMonitor.
+    Quando viene aggiunta una nuova riga, la inoltra al consumer
+    (qualunque oggetto con un metodo process_json_line(line)).
+    Non conosce ne' assume nulla sullo stato interno del consumer:
+    e' compito del consumer stesso decidere se/cosa stampare o fare
+    con ogni riga processata.
     """
 
     def __init__(
         self,
         path: str | Path,
-        consumer: BlePresenceMonitor,
+        consumer: JsonlConsumer,
         poll_interval: float = 0.5
     ) -> None:
 
@@ -68,14 +72,6 @@ class JsonlTailMonitor:
 
                 try:
                     self.consumer.process_json_line(line)
-
-                    status = self.consumer.status
-
-                    print(
-                        f"[STATE] "
-                        f"online={status.online} "
-                        f"last_change={status.last_change}"
-                    )
 
                 except Exception as ex:
                     print(

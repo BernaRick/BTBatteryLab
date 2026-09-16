@@ -1,24 +1,23 @@
-from btbatterylab.monitoring.ble_presence_monitor import (
-    BlePresenceMonitor,
-)
-from btbatterylab.monitoring.tail_monitor import (
-    JsonlTailMonitor,
-)
+from btbatterylab.collector.unified_collector import UnifiedCollector
 
 
 def main() -> None:
-    monitor = BlePresenceMonitor()
-
-    tail = JsonlTailMonitor(
-        path=r"C:\Users\PatrickBernardoni\OneDrive - Patrick Bernardoni\Documents\BTBatteryLabData\ble-events.jsonl",
-        consumer=monitor,
+    collector = UnifiedCollector(
+        jsonl_path=(
+            r"C:\Users\PatrickBernardoni\OneDrive - Patrick Bernardoni"
+            r"\Documents\BTBatteryLabData\ble-events.jsonl"
+        ),
+        # Il polling PnP e' lento (decine di secondi con 5 device
+        # accoppiati): ogni 5 minuti e' un buon compromesso per ora,
+        # va rivisto quando ci sara' un sistema di configurazione.
+        poll_interval_seconds=300.0,
     )
 
     try:
-        tail.start()
+        collector.start()
 
     except KeyboardInterrupt:
-        tail.stop()
+        collector.stop()
 
 
 if __name__ == "__main__":
