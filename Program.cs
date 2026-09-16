@@ -171,7 +171,7 @@ async Task OnDeviceAddedAsync(DeviceInformation info)
         trackedDevices[info.Id] = device;
     }
 
-    Console.WriteLine($"Trovato: {device.Name} [{info.Id}]");
+    string initialStatus = device.ConnectionStatus.ToString();
 
     device.ConnectionStatusChanged += async (_, _) =>
         await HandleConnectionStatusChangedAsync(device);
@@ -182,6 +182,10 @@ async Task OnDeviceAddedAsync(DeviceInformation info)
     {
         initialBattery = await TryReadBatteryLevelAsync(device);
     }
+
+    Console.WriteLine(
+        $"Trovato: {device.Name} [{info.Id}] - stato: {initialStatus}" +
+        (initialBattery is null ? "" : $" (batteria {initialBattery}%)"));
 
     LogEvent(
         "Startup",
