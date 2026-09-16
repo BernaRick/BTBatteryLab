@@ -246,7 +246,18 @@ class BluetoothCollector:
                     # Python precedenti alla 3.11 non accettano "Z" in
                     # fromisoformat().
                     normalized = updated_raw.replace("Z", "+00:00")
-                    timestamp = datetime.fromisoformat(normalized)
+                    parsed = datetime.fromisoformat(normalized)
+
+                    if parsed.tzinfo is not None:
+                        # Riporta a ora locale "naive", coerente con
+                        # datetime.now() usato altrove (es. il
+                        # fallback qui sopra, o il confronto nel
+                        # blocco __main__): senza questo, sottrarre
+                        # un timestamp "aware" da uno "naive" solleva
+                        # TypeError.
+                        parsed = parsed.astimezone().replace(tzinfo=None)
+
+                    timestamp = parsed
                 except ValueError:
                     timestamp = now
 
