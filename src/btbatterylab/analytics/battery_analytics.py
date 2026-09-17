@@ -44,6 +44,24 @@ DEFAULT_WINDOW_DAYS = 30
 # than this.
 MIN_SESSION_DURATION_HOURS = 10 / 60  # 10 minutes
 
+# A *discharge* session implying a rate faster than this is treated as
+# implausible and dropped, even if it's long enough to pass the
+# duration check above. Even the fastest-draining Bluetooth
+# accessories (true wireless earbuds under continuous use) typically
+# take several hours to fully deplete, so anything faster is far more
+# likely a reporting glitch (a BLE battery characteristic briefly
+# returning a stale/wrong value before self-correcting) than real
+# drain. Discovered from a real-data test: an MX Master 2S mouse
+# reported an implied 48.5%/h drain rate from a single ~50-minute
+# session - long enough to survive MIN_SESSION_DURATION_HOURS, so
+# duration alone wasn't a reliable enough signal on its own.
+#
+# Deliberately NOT applied to "charge" sessions: quick-charging small
+# batteries (earbuds cases especially) can legitimately go from empty
+# to full in well under an hour, so a high charge rate isn't a sign of
+# bad data the way a high discharge rate is.
+MAX_PLAUSIBLE_DISCHARGE_RATE_PERCENT_PER_HOUR = 40.0
+
 
 def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value)
@@ -184,21 +202,35 @@ def _build_sessions(
     return sessions
 
 
-def _drop_noise_sessions(
+def _drop_unreliable_sessions(
     sessions: list[BatterySession],
 ) -> list[BatterySession]:
     """
-    Drops sessions shorter than MIN_SESSION_DURATION_HOURS - see the
-    comment on that constant. Applied to both directions: a too-short
-    "charge" session is just as likely to be noise as a too-short
-    "discharge" one.
+    Drops sessions that are too short to trust
+    (MIN_SESSION_DURATION_HOURS, both directions) or, for discharge
+    sessions specifically, imply a physically implausible rate
+    (MAX_PLAUSIBLE_DISCHARGE_RATE_PERCENT_PER_HOUR) - see the comments
+    on those constants. Both are proxies for the same underlying
+    problem: a glitchy/noisy reading mistaken for a real trend.
     """
 
-    return [
-        session
-        for session in sessions
-        if session.duration_hours >= MIN_SESSION_DURATION_HOURS
-    ]
+    reliable = []
+
+    for session in sessions:
+        if session.duration_hours < MIN_SESSION_DURATION_HOURS:
+            continue
+
+        if session.direction == "discharge":
+            rate = session.rate_percent_per_hour
+            if (
+                rate is not None
+                and rate > MAX_PLAUSIBLE_DISCHARGE_RATE_PERCENT_PER_HOUR
+            ):
+                continue
+
+        reliable.append(session)
+
+    return reliable
 
 
 def _weighted_drain_rate(sessions: list[BatterySession]) -> float | None:
@@ -230,7 +262,7 @@ def build_device_report(
 
     percents = [p for _, p, _ in readings]
     sessions = _build_sessions(readings)
-    sessions = _drop_noise_sessions(sessions)
+    sessions = _drop_unreliable_sessions(sessions)
     discharge_sessions = [s for s in sessions if s.direction == "discharge"]
     charge_sessions = [s for s in sessions if s.direction == "charge"]
 
