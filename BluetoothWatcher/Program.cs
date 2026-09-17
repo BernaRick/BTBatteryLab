@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
@@ -331,6 +332,82 @@ Console.WriteLine();
 Console.WriteLine($"Log file: {logFile}");
 Console.WriteLine();
 
+// --- Collector Python in bundle (build standalone, vedi build_exe.bat) ---
+//
+// Se questo eseguibile e' stato pubblicato con build_exe.bat, accanto a
+// lui c'e' una cartella "btbatterylab" con l'exe generato da PyInstaller:
+// in quel caso lo avviamo noi in background, senza una seconda finestra
+// di console, invece di richiedere due terminali separati come con
+// run.bat. In sviluppo (dotnet run dalla sorgente) quella cartella non
+// esiste: non cambia nulla, si continua a usare run.bat o ad avviare il
+// collector a mano.
+string collectorExePath = Path.Combine(
+    AppContext.BaseDirectory, "btbatterylab", "btbatterylab.exe");
+
+Process? collectorProcess = null;
+
+if (File.Exists(collectorExePath))
+{
+    string collectorLogFile = Path.Combine(dataDirectory, "collector.log");
+
+    var collectorStartInfo = new ProcessStartInfo
+    {
+        FileName = collectorExePath,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+
+    collectorProcess = new Process { StartInfo = collectorStartInfo };
+
+    collectorProcess.OutputDataReceived += (_, e) =>
+    {
+        if (e.Data is null) return;
+
+        lock (logLock)
+        {
+            File.AppendAllText(
+                collectorLogFile,
+                $"[{DateTime.Now:HH:mm:ss}] {e.Data}{Environment.NewLine}");
+        }
+    };
+
+    collectorProcess.ErrorDataReceived += (_, e) =>
+    {
+        if (e.Data is null) return;
+
+        lock (logLock)
+        {
+            File.AppendAllText(
+                collectorLogFile,
+                $"[{DateTime.Now:HH:mm:ss}] [ERR] {e.Data}{Environment.NewLine}");
+        }
+    };
+
+    collectorProcess.Start();
+    collectorProcess.BeginOutputReadLine();
+    collectorProcess.BeginErrorReadLine();
+
+    Console.WriteLine(
+        $"Collector Python avviato in background (log: {collectorLogFile})");
+
+    // Stesso motivo dell'attesa in run.bat: JsonlTailMonitor segue solo
+    // le righe *nuove* scritte da questo momento in poi, quindi il
+    // collector deve essere gia' in ascolto prima che i watcher qui
+    // sotto scrivano i loro eventi "Startup".
+    await Task.Delay(3000);
+}
+else
+{
+    Console.WriteLine(
+        "Collector Python non incluso in questo eseguibile (modalita' " +
+        "sviluppo): avvialo separatamente con run.bat o " +
+        "'python -m btbatterylab.main'.");
+}
+
+Console.WriteLine();
+
 string selector = BluetoothLEDevice.GetDeviceSelector();
 
 DeviceWatcher watcher = DeviceInformation.CreateWatcher(selector);
@@ -364,6 +441,19 @@ Console.ReadLine();
 
 watcher.Stop();
 classicWatcher.Stop();
+
+if (collectorProcess is not null && !collectorProcess.HasExited)
+{
+    try
+    {
+        collectorProcess.Kill(entireProcessTree: true);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(
+            $"Impossibile fermare il collector Python: {ex.Message}");
+    }
+}
 
 lock (trackedDevices)
 {

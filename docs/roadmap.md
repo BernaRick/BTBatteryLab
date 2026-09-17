@@ -22,7 +22,7 @@ Create a functional replacement for manual PowerShell battery logging.
 - Battery information collection ✅
 - Local SQLite database ✅
 - Simplified startup (`run.bat`) ✅
-- Standalone `.exe` packaging (single double-click, no console windows)
+- Standalone `.exe` packaging (single double-click, no console windows) ✅🔄
 - CSV export
 - Configuration system
 - Logging engine
@@ -131,15 +131,20 @@ Implemented:
 - `BluetoothWatcher` folded into this repository under `BluetoothWatcher/`, full commit history preserved via `git subtree`
 - `run.bat` starts both processes, in the right order, from one double-click
 
-Planned:
+Implemented (not yet verified on real hardware):
 
-- Real standalone `.exe` packaging, so running BTBatteryLab doesn't require a Python/`.NET` dev setup at all (tracked in the Features list above)
+- `btbatterylab.spec`: PyInstaller spec that packages the Python collector (`--onedir`, no third-party dependencies to bundle)
+- `BluetoothWatcher/Program.cs`: looks for the packaged collector next to itself at startup and, if found, launches it in the background (`CreateNoWindow`, output redirected to `collector.log`) instead of requiring a second console window — falls back to the old dev behavior (nothing launched, use `run.bat`) if it's not there
+- `build_exe.bat`: builds both and assembles them into `dist/release/`, so the whole thing is one double-click (`BluetoothWatcher.exe`)
+
+Known limitation: the build still bakes in the hardcoded data path from `main.py` (see the configuration system item above), so it's not yet portable to a machine other than the one it's built from.
 
 ### Status
 
 🟡 In Progress — presence, unified battery collection, and storage
-are done; CSV export, the configuration system, the logging engine,
-and standalone `.exe` packaging are still open.
+are done; standalone `.exe` packaging is implemented but not yet
+tested on real hardware; CSV export, the configuration system, and
+the logging engine are still open.
 
 ---
 

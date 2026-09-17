@@ -232,9 +232,15 @@ BTBatteryLab has two parts that run side by side, both living in this one reposi
 
 ### Quick start: `run.bat`
 
-Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below), each in its own console window. There's no packaged single `.exe` yet — see the roadmap.
+Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below), each in its own console window.
 
-### Manual start (or if you want to see what `run.bat` does)
+### Standalone build: `build_exe.bat`
+
+For a single double-click with only one console window, run [`build_exe.bat`](./build_exe.bat) (needs the `.venv` above, plus the .NET 8 SDK — it installs PyInstaller itself if missing). It packages the Python collector with PyInstaller and publishes `BluetoothWatcher` self-contained into `dist/release/`; the result, `dist/release/BluetoothWatcher.exe`, starts the Python collector for you in the background (no separate window) when you double-click it.
+
+This is new and has not been through a real-hardware test yet (unlike `run.bat`, which has) — if it misbehaves, fall back to `run.bat` or the manual steps below and let us know. It also still bakes in the hardcoded data path from `main.py`, so a build only works correctly on the machine it's Python source lives on until there's a configuration system (see the roadmap).
+
+### Manual start (or if you want to see what `run.bat`/`build_exe.bat` do)
 
 #### 1. Run the BLE/presence watcher (C#)
 
@@ -255,7 +261,7 @@ This follows that same `ble-events.jsonl` file live, and polls Windows PnP in th
 
 > **Tip:** start the Python collector before `dotnet run` if you can. The collector only follows *new* lines written after it starts, so if the watcher's initial "device found" events are written first, that device's online/offline status stays unknown (`?`) until the next real connect/disconnect.
 
-Neither part is packaged for end users yet — this is still an early-development setup meant for running from source.
+This is still an early-development project — `build_exe.bat` above is the first step towards something end users could just download and run, but it's not there yet (still needs the configuration system, and more real-world testing).
 
 ---
 
