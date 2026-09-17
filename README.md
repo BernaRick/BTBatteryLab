@@ -238,7 +238,7 @@ Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the rep
 
 For a single double-click with only one console window, run [`build_exe.bat`](./build_exe.bat) (needs the `.venv` above, plus the .NET 8 SDK — it installs PyInstaller itself if missing). It packages the Python collector with PyInstaller and publishes `BluetoothWatcher` self-contained into `dist/release/`; the result, `dist/release/BluetoothWatcher.exe`, starts the Python collector for you in the background (no separate window) when you double-click it.
 
-This is new and has not been through a real-hardware test yet (unlike `run.bat`, which has) — if it misbehaves, fall back to `run.bat` or the manual steps below and let us know. It also still bakes in the hardcoded data path from `main.py`, so a build only works correctly on the machine it's Python source lives on until there's a configuration system (see the roadmap).
+This has now been verified on real hardware: single console window, background collector startup, `collector.log` populated, and battery readings for classic devices arriving within seconds of connect. It still bakes in the hardcoded data path from `main.py`, so a build only works correctly on the machine its Python source lives on until there's a configuration system (see the roadmap).
 
 ### Manual start (or if you want to see what `run.bat`/`build_exe.bat` do)
 
@@ -261,7 +261,7 @@ This follows that same `ble-events.jsonl` file live, and polls Windows PnP in th
 
 > **Tip:** start the Python collector before `dotnet run` if you can. The collector only follows *new* lines written after it starts, so if the watcher's initial "device found" events are written first, that device's online/offline status stays unknown (`?`) until the next real connect/disconnect.
 
-This is still an early-development project — `build_exe.bat` above is the first step towards something end users could just download and run, but it's not there yet (still needs the configuration system, and more real-world testing).
+This is still an early-development project — `build_exe.bat` above gets you a single double-clickable `.exe`, verified on real hardware, but it's not yet something end users on a different machine could just download and run (still needs the configuration system to remove the hardcoded data path).
 
 ---
 
@@ -276,7 +276,7 @@ This is still an early-development project — `build_exe.bat` above is the firs
 - Battery collection ✅
 - SQLite database ✅
 - Simplified startup (`run.bat`) ✅
-- Standalone `.exe` packaging (single double-click, no console windows) 🔄
+- Standalone `.exe` packaging (single double-click, no console windows) ✅
 - CSV export
 - Logging engine
 
