@@ -372,6 +372,12 @@ class UnifiedCollector:
         un altro thread o non arriva un KeyboardInterrupt.
         """
 
+        # Il file JSONL lo si vede gia' stampato da JsonlTailMonitor
+        # ("Waiting for file"/"Following"), ma il database no - senza
+        # questa riga l'unico modo per sapere dove SqliteStorage sta
+        # scrivendo e' leggere il codice.
+        print(f"Database: {self._storage.db_path}")
+
         self._polling_thread = threading.Thread(
             target=self._polling_loop,
             daemon=True,
