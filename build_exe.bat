@@ -43,6 +43,22 @@ rem Usiamo sempre "python -m ..." invece degli .exe separati in
 rem Scripts\ (pip.exe, pyinstaller.exe): quegli shim a volte mancano o
 rem vengono messi in quarantena dall'antivirus, mentre il modulo
 rem funziona sempre finche' funziona python.exe.
+"%ROOT%.venv\Scripts\python.exe" -c "import pip" 2>nul
+if errorlevel 1 (
+    echo pip non e' presente in questo virtual environment, lo installo con ensurepip...
+    "%ROOT%.venv\Scripts\python.exe" -m ensurepip --upgrade
+    if errorlevel 1 (
+        echo [ERRORE] Impossibile installare pip nel virtual environment.
+        echo Prova a ricrearlo da zero:
+        echo     rmdir /s /q .venv
+        echo     python -m venv .venv
+        echo     .venv\Scripts\python.exe -m pip install -e .
+        pause
+        exit /b 1
+    )
+    echo.
+)
+
 "%ROOT%.venv\Scripts\python.exe" -c "import PyInstaller" 2>nul
 if errorlevel 1 (
     echo PyInstaller non e' installato nel virtual environment, lo installo...
