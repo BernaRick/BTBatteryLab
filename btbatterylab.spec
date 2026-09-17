@@ -1,18 +1,18 @@
-# PyInstaller spec for packaging the Python collector into a
-# standalone executable (see docs/roadmap.md, "Standalone .exe
-# packaging" and build_exe.bat).
+# PyInstaller spec per pacchettizzare il collector Python in un
+# eseguibile standalone (vedi docs/roadmap.md, "Standalone .exe
+# packaging" e build_exe.bat).
 #
-# Manual use (usually build_exe.bat does this): from the repo root,
-# with the virtual environment activated,
+# Uso manuale (di solito e' build_exe.bat a farlo): dalla root del
+# repo, con il virtual environment attivato,
 #     pyinstaller btbatterylab.spec
 #
-# --onedir mode (not --onefile): produces dist/btbatterylab/ with
-# btbatterylab.exe plus its dependencies as a folder - immediate
-# startup and easier to debug than --onefile, which instead unpacks
-# itself into a temp folder on every launch. The collector has no
-# third-party dependencies (only the standard library: sqlite3,
-# threading, json, pathlib, subprocess), so no hidden-imports are
-# needed.
+# Modalita' --onedir (non --onefile): produce dist/btbatterylab/ con
+# btbatterylab.exe piu' le sue dipendenze come cartella - avvio
+# immediato e piu' facile da debuggare rispetto a --onefile, che
+# invece si scompatta in una cartella temporanea a ogni avvio. Il
+# collector non ha dipendenze di terze parti (solo libreria standard:
+# sqlite3, threading, json, pathlib, subprocess), quindi non servono
+# hidden-imports.
 
 block_cipher = None
 

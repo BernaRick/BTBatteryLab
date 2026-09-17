@@ -4,18 +4,18 @@ from btbatterylab.collector.unified_collector import UnifiedCollector
 
 
 def main() -> None:
-    # When this process is started in the background by
-    # BluetoothWatcher.exe (standalone build, see build_exe.bat)
-    # instead of in an interactive console, stdout/stderr are no
-    # longer a terminal but a pipe: Python automatically switches from
-    # line-buffering to block-buffering, so print() output stays stuck
-    # in an internal buffer until it fills up or the process ends -
-    # with only a few lines per minute, effectively never. This is why
-    # the log ended up empty (or never even created), not because of a
-    # problem in the data collection logic. We always force
-    # line-buffering, so every printed line reaches whoever is reading
-    # stdout right away, whether that's a real console or
-    # BluetoothWatcher.exe's log file.
+    # Quando questo processo viene avviato in background da
+    # BluetoothWatcher.exe (build standalone, vedi build_exe.bat)
+    # invece che in una console interattiva, stdout/stderr non sono
+    # piu' un terminale ma una pipe: Python passa automaticamente da
+    # line-buffering a block-buffering, quindi i print() restano
+    # bloccati in un buffer interno finche' non si riempie o il
+    # processo termina - con poche righe al minuto, di fatto mai. Il
+    # log risultava vuoto (o addirittura mai creato) per questo, non
+    # per un problema nella logica di raccolta dati. Forziamo il
+    # line-buffering sempre, cosi' ogni riga stampata arriva subito a
+    # chi legge lo stdout, che sia una console vera o il file di log
+    # di BluetoothWatcher.exe.
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
 
@@ -24,9 +24,9 @@ def main() -> None:
             r"C:\Users\PatrickBernardoni\OneDrive - Patrick Bernardoni"
             r"\Documents\BTBatteryLabData\ble-events.jsonl"
         ),
-        # PnP polling is slow (tens of seconds with 5 paired devices):
-        # every 5 minutes is a reasonable trade-off for now, to be
-        # revisited once there's a configuration system.
+        # Il polling PnP e' lento (decine di secondi con 5 device
+        # accoppiati): ogni 5 minuti e' un buon compromesso per ora,
+        # va rivisto quando ci sara' un sistema di configurazione.
         poll_interval_seconds=300.0,
     )
 

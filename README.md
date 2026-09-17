@@ -263,18 +263,6 @@ This follows that same `ble-events.jsonl` file live, and polls Windows PnP in th
 
 This is still an early-development project — `build_exe.bat` above gets you a single double-clickable `.exe`, verified on real hardware, but it's not yet something end users on a different machine could just download and run (still needs the configuration system to remove the hardcoded data path).
 
-### Battery analytics: `python -m btbatterylab.analytics`
-
-Once some history has been collected into `btbatterylab.db` (see [Historical Data](#historical-data)), run:
-
-```powershell
-.venv\Scripts\python.exe -m btbatterylab.analytics
-```
-
-for a per-device report over the last 30 days: reading count, min/max/average battery percent, drain rate (%/hour, from the discharge runs found in `battery_log`), an estimated remaining runtime projected from that rate, and any detected charge sessions. Useful flags: `--days N` to change the time window, `--device "name or address"` to filter to one device, and `--db path\to\btbatterylab.db` to point at a database anywhere other than the default data folder.
-
-This is a plain projection from past history, not a live countdown — it has no idea whether a device is online or currently charging (that lives only in `UnifiedCollector`'s in-memory state while it's running).
-
 ---
 
 ## Project Roadmap
@@ -301,9 +289,9 @@ This is a plain projection from past history, not a live countdown — it has no
 
 ### v0.3
 
-- Runtime calculations ✅
-- Battery drain metrics ✅
-- Session detection ✅ (charge/discharge; daily stats and presence-aware analytics still open — see [docs/roadmap.md](./docs/roadmap.md))
+- Runtime calculations
+- Battery drain metrics
+- Session detection
 
 ### v0.4
 

@@ -1,50 +1,51 @@
 @echo off
 setlocal
 
-rem Packages BTBatteryLab into a folder ready for distribution: a
-rem single executable to launch (dist\release\BluetoothWatcher.exe)
-rem that brings along the Python collector, already to use - whoever
-rem USES it doesn't need Python, .NET or git installed. Those are only
-rem needed here, to BUILD it.
+rem Pacchettizza BTBatteryLab in una cartella pronta per la
+rem distribuzione: un solo eseguibile da avviare
+rem (dist\release\BluetoothWatcher.exe), che si porta dietro il
+rem collector Python gia' pronto all'uso - chi lo USA non deve avere
+rem Python, .NET o git installati. Servono solo qui, per COSTRUIRLO.
 rem
-rem Build prerequisites (see also README.md):
-rem   - .venv already created with: python -m venv .venv ^&^& .venv\Scripts\pip install -e .
+rem Prerequisiti per la build (vedi anche README.md):
+rem   - .venv gia' creato con: python -m venv .venv ^&^& .venv\Scripts\pip install -e .
 rem   - .NET 8 SDK
-rem   - PyInstaller: this script installs it itself if missing
+rem   - PyInstaller: lo installa questo script stesso se manca
 
 set "ROOT=%~dp0"
 set "DIST=%ROOT%dist\release"
 
-rem PyInstaller writes its "raw" output (dist\btbatterylab, before the
-rem final copy in step 3) under %TEMP%, not inside the repo: the repo
-rem lives under OneDrive, which syncs every file as soon as it's
-rem created or modified. PyInstaller generates dozens of small files
-rem (the DLLs in _internal), and on the next rebuild, when it tries to
-rem delete that folder to recreate it from scratch, OneDrive may still
-rem be holding a file's handle to hash/upload it, and the deletion
-rem fails with "Access is denied" - even with no process of ours
-rem running (which is why taskkill alone wasn't enough). %TEMP% isn't
-rem synced by OneDrive, so deletion there is always immediate.
+rem PyInstaller scrive il suo output "grezzo" (dist\btbatterylab,
+rem prima della copia finale nel punto 3) dentro %TEMP%, non dentro la
+rem repo: la repo vive sotto OneDrive, che sincronizza ogni file
+rem appena viene creato o modificato. PyInstaller genera decine di
+rem file piccoli (le DLL in _internal) e poi, al rebuild successivo,
+rem prova a cancellare quella cartella per ricrearla da zero - se
+rem OneDrive ha ancora in mano l'handle di un file per calcolarne
+rem l'hash/caricarlo, la cancellazione fallisce con "Access is
+rem denied", anche senza nessun processo nostro in esecuzione (motivo
+rem per cui il taskkill da solo non e' bastato). %TEMP% non e'
+rem sincronizzato da OneDrive, quindi li' la cancellazione e' sempre
+rem immediata.
 set "PYIBUILD=%TEMP%\btbatterylab_pyibuild"
 
-echo BTBatteryLab - standalone build
+echo BTBatteryLab - build standalone
 echo --------------------------------
 echo.
 
-rem If a previous build is still running (BluetoothWatcher.exe and/or
-rem the btbatterylab.exe collector it launches in the background),
-rem their files stay open and PyInstaller/dotnet can't overwrite them
-rem (Windows refuses to delete a file another process has open - see
-rem also the equivalent fix in BluetoothWatcher/Program.cs). We close
-rem both of them ourselves before starting, so it doesn't have to be
-rem done by hand before every rebuild.
+rem Se una build precedente e' ancora in esecuzione (BluetoothWatcher.exe
+rem e/o il collector btbatterylab.exe che lancia in background), i loro
+rem file restano aperti e PyInstaller/dotnet non riescono a sovrascriverli
+rem (Windows nega la cancellazione di un file aperto da un altro processo -
+rem vedi anche il fix analogo in BluetoothWatcher/Program.cs). Li chiudiamo
+rem noi prima di ripartire, cosi' non serve farlo a mano ad ogni rebuild.
 taskkill /F /IM btbatterylab.exe /T >nul 2>nul
 taskkill /F /IM BluetoothWatcher.exe /T >nul 2>nul
 
 if not exist "%ROOT%.venv\Scripts\python.exe" (
-    echo [ERROR] Can't find %ROOT%.venv\Scripts\python.exe
+    echo [ERRORE] Non trovo %ROOT%.venv\Scripts\python.exe
     echo.
-    echo Create the virtual environment first:
+    echo Crea prima il virtual environment:
     echo     python -m venv .venv
     echo     .venv\Scripts\pip install -e .
     echo.
@@ -54,24 +55,24 @@ if not exist "%ROOT%.venv\Scripts\python.exe" (
 
 where dotnet >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] "dotnet" not found in PATH.
-    echo Install the .NET 8 SDK: https://dotnet.microsoft.com/download
+    echo [ERRORE] "dotnet" non trovato nel PATH.
+    echo Installa il .NET 8 SDK: https://dotnet.microsoft.com/download
     echo.
     pause
     exit /b 1
 )
 
-rem We always use "python -m ..." instead of the separate .exe shims
-rem in Scripts\ (pip.exe, pyinstaller.exe): those shims sometimes go
-rem missing or get quarantined by antivirus software, while the module
-rem always works as long as python.exe works.
+rem Usiamo sempre "python -m ..." invece degli .exe separati in
+rem Scripts\ (pip.exe, pyinstaller.exe): quegli shim a volte mancano o
+rem vengono messi in quarantena dall'antivirus, mentre il modulo
+rem funziona sempre finche' funziona python.exe.
 "%ROOT%.venv\Scripts\python.exe" -c "import pip" 2>nul
 if errorlevel 1 (
-    echo pip isn't present in this virtual environment, installing it with ensurepip...
+    echo pip non e' presente in questo virtual environment, lo installo con ensurepip...
     "%ROOT%.venv\Scripts\python.exe" -m ensurepip --upgrade
     if errorlevel 1 (
-        echo [ERROR] Could not install pip in the virtual environment.
-        echo Try recreating it from scratch:
+        echo [ERRORE] Impossibile installare pip nel virtual environment.
+        echo Prova a ricrearlo da zero:
         echo     rmdir /s /q .venv
         echo     python -m venv .venv
         echo     .venv\Scripts\python.exe -m pip install -e .
@@ -83,10 +84,10 @@ if errorlevel 1 (
 
 "%ROOT%.venv\Scripts\python.exe" -c "import PyInstaller" 2>nul
 if errorlevel 1 (
-    echo PyInstaller isn't installed in the virtual environment, installing it...
+    echo PyInstaller non e' installato nel virtual environment, lo installo...
     "%ROOT%.venv\Scripts\python.exe" -m pip install pyinstaller
     if errorlevel 1 (
-        echo [ERROR] PyInstaller installation failed.
+        echo [ERRORE] Installazione di PyInstaller fallita.
         pause
         exit /b 1
     )
@@ -94,12 +95,12 @@ if errorlevel 1 (
 )
 
 if exist "%DIST%" (
-    echo Cleaning up the previous build in %DIST%...
+    echo Pulisco la build precedente in %DIST%...
     rmdir /s /q "%DIST%"
     echo.
 )
 
-echo [1/3] Packaging the Python collector with PyInstaller...
+echo [1/3] Pacchettizzo il collector Python con PyInstaller...
 if exist "%PYIBUILD%" (
     rmdir /s /q "%PYIBUILD%"
 )
@@ -107,7 +108,7 @@ pushd "%ROOT%"
 "%ROOT%.venv\Scripts\python.exe" -m PyInstaller btbatterylab.spec --noconfirm ^
     --distpath "%PYIBUILD%\dist" --workpath "%PYIBUILD%\build"
 if errorlevel 1 (
-    echo [ERROR] PyInstaller build failed.
+    echo [ERRORE] Build PyInstaller fallita.
     popd
     pause
     exit /b 1
@@ -115,30 +116,30 @@ if errorlevel 1 (
 popd
 echo.
 
-echo [2/3] Publishing BluetoothWatcher (self-contained, win-x64)...
+echo [2/3] Pubblico BluetoothWatcher (self-contained, win-x64)...
 dotnet publish "%ROOT%BluetoothWatcher" -c Release -r win-x64 --self-contained true -o "%DIST%"
 if errorlevel 1 (
-    echo [ERROR] dotnet publish failed.
+    echo [ERRORE] dotnet publish fallito.
     pause
     exit /b 1
 )
 echo.
 
-echo [3/3] Copying the packaged Python collector into the build...
+echo [3/3] Copio il collector Python pacchettizzato nella build...
 xcopy /e /i /y "%PYIBUILD%\dist\btbatterylab" "%DIST%\btbatterylab\" >nul
 echo.
 
-echo Done. Executable ready at:
+echo Fatto. Eseguibile pronto in:
 echo     %DIST%\BluetoothWatcher.exe
 echo.
-echo Just double-click BluetoothWatcher.exe: it also starts the
-echo Python collector in the background (log in
-echo Documents\BTBatteryLabData\collector.log), without opening a
-echo second console window.
+echo Basta un doppio click su BluetoothWatcher.exe: avvia anche il
+echo collector Python in background (log in
+echo Documents\BTBatteryLabData\collector.log), senza aprire una
+echo seconda finestra di console.
 echo.
-echo Note: this build carries the hardcoded data path that main.py has
-echo today (Patrick's Documents folder) - it isn't portable to
-echo another PC yet until there's a configuration system (see
-echo docs/roadmap.md).
+echo Nota: questa build si porta dietro il path dati che main.py ha
+echo oggi hardcoded (la cartella Documents di Patrick) - non e' ancora
+echo portabile su un altro PC finche' non esiste un configuration
+echo system (vedi docs/roadmap.md).
 echo.
 pause
