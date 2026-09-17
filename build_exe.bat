@@ -19,6 +19,15 @@ echo BTBatteryLab - build standalone
 echo --------------------------------
 echo.
 
+rem Se una build precedente e' ancora in esecuzione (BluetoothWatcher.exe
+rem e/o il collector btbatterylab.exe che lancia in background), i loro
+rem file restano aperti e PyInstaller/dotnet non riescono a sovrascriverli
+rem (Windows nega la cancellazione di un file aperto da un altro processo -
+rem vedi anche il fix analogo in BluetoothWatcher/Program.cs). Li chiudiamo
+rem noi prima di ripartire, cosi' non serve farlo a mano ad ogni rebuild.
+taskkill /F /IM btbatterylab.exe /T >nul 2>nul
+taskkill /F /IM BluetoothWatcher.exe /T >nul 2>nul
+
 if not exist "%ROOT%.venv\Scripts\python.exe" (
     echo [ERRORE] Non trovo %ROOT%.venv\Scripts\python.exe
     echo.
