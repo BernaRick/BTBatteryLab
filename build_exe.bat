@@ -15,6 +15,20 @@ rem   - PyInstaller: lo installa questo script stesso se manca
 set "ROOT=%~dp0"
 set "DIST=%ROOT%dist\release"
 
+rem PyInstaller scrive il suo output "grezzo" (dist\btbatterylab,
+rem prima della copia finale nel punto 3) dentro %TEMP%, non dentro la
+rem repo: la repo vive sotto OneDrive, che sincronizza ogni file
+rem appena viene creato o modificato. PyInstaller genera decine di
+rem file piccoli (le DLL in _internal) e poi, al rebuild successivo,
+rem prova a cancellare quella cartella per ricrearla da zero - se
+rem OneDrive ha ancora in mano l'handle di un file per calcolarne
+rem l'hash/caricarlo, la cancellazione fallisce con "Access is
+rem denied", anche senza nessun processo nostro in esecuzione (motivo
+rem per cui il taskkill da solo non e' bastato). %TEMP% non e'
+rem sincronizzato da OneDrive, quindi li' la cancellazione e' sempre
+rem immediata.
+set "PYIBUILD=%TEMP%\btbatterylab_pyibuild"
+
 echo BTBatteryLab - build standalone
 echo --------------------------------
 echo.
@@ -87,8 +101,12 @@ if exist "%DIST%" (
 )
 
 echo [1/3] Pacchettizzo il collector Python con PyInstaller...
+if exist "%PYIBUILD%" (
+    rmdir /s /q "%PYIBUILD%"
+)
 pushd "%ROOT%"
-"%ROOT%.venv\Scripts\python.exe" -m PyInstaller btbatterylab.spec --noconfirm
+"%ROOT%.venv\Scripts\python.exe" -m PyInstaller btbatterylab.spec --noconfirm ^
+    --distpath "%PYIBUILD%\dist" --workpath "%PYIBUILD%\build"
 if errorlevel 1 (
     echo [ERRORE] Build PyInstaller fallita.
     popd
@@ -108,7 +126,7 @@ if errorlevel 1 (
 echo.
 
 echo [3/3] Copio il collector Python pacchettizzato nella build...
-xcopy /e /i /y "%ROOT%dist\btbatterylab" "%DIST%\btbatterylab\" >nul
+xcopy /e /i /y "%PYIBUILD%\dist\btbatterylab" "%DIST%\btbatterylab\" >nul
 echo.
 
 echo Fatto. Eseguibile pronto in:
