@@ -21,6 +21,21 @@ You can contribute in several ways:
 
 ---
 
+# Development Setup
+
+BTBatteryLab lives in a single repository with two parts that run
+side by side: `BluetoothWatcher/` (C#, talks to the Windows Bluetooth
+APIs) and `src/btbatterylab/` (Python, the collector and storage
+layer).
+
+See the [Getting Started](./README.md#getting-started) section of the
+README for prerequisites and how to run both parts, either with
+`run.bat` or manually. There is no automated test suite yet, so please
+test your changes against a real run (ideally with real Bluetooth
+hardware) before opening a pull request.
+
+---
+
 # Reporting Bugs
 
 When reporting a bug, please include:
