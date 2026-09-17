@@ -5,7 +5,7 @@ from datetime import datetime
 @dataclass
 class DeviceStatus:
     """
-    Stato corrente del dispositivo Bluetooth.
+    Current status of the Bluetooth device.
     """
 
     online: bool = False

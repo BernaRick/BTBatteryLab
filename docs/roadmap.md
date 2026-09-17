@@ -136,7 +136,7 @@ Implemented and verified on real hardware:
 - `btbatterylab.spec`: PyInstaller spec that packages the Python collector (`--onedir`, no third-party dependencies to bundle)
 - `BluetoothWatcher/Program.cs`: looks for the packaged collector next to itself at startup and, if found, launches it in the background (`CreateNoWindow`, output redirected to `collector.log`) instead of requiring a second console window — falls back to the old dev behavior (nothing launched, use `run.bat`) if it's not there
 - `build_exe.bat`: builds both and assembles them into `dist/release/`, so the whole thing is one double-click (`BluetoothWatcher.exe`); PyInstaller's own intermediate output is built under `%TEMP%` rather than inside the repo, to avoid `Access is denied` errors from OneDrive syncing files mid-build
-- Confirmed on real hardware: single console window, "Collector Python avviato in background" message, `collector.log` populated (line-buffered stdout), classic-device battery arriving within seconds of connect via the wake-on-connect PnP poll, and the collector process actually terminating (checked in Task Manager) when `BluetoothWatcher.exe` is closed with ENTER
+- Confirmed on real hardware: single console window, "Python collector started in the background" message, `collector.log` populated (line-buffered stdout), classic-device battery arriving within seconds of connect via the wake-on-connect PnP poll, and the collector process actually terminating (checked in Task Manager) when `BluetoothWatcher.exe` is closed with ENTER
 
 Known limitation: the build still bakes in the hardcoded data path from `main.py` (see the configuration system item above), so it's not yet portable to a machine other than the one it's built from.
 
