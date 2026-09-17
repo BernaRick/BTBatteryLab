@@ -57,6 +57,14 @@ def extract_address(instance_id: str | None) -> str | None:
 
 class BluetoothCollector:
 
+    def __init__(self, pnp_timeout_seconds: float = 60.0) -> None:
+        # How long a single PnP battery poll (read_battery_levels) is
+        # allowed to run before we give up on it - overridable, see
+        # btbatterylab.config. Deliberately does NOT affect discover(),
+        # which is a separate, much quicker PowerShell query with its
+        # own fixed 15s timeout.
+        self._pnp_timeout_seconds = pnp_timeout_seconds
+
     def discover(self):
         command = (
             "Get-PnpDevice | "
@@ -190,16 +198,16 @@ class BluetoothCollector:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=self._pnp_timeout_seconds,
             )
         except subprocess.TimeoutExpired as ex:
             raise RuntimeError(
                 "Battery query via PowerShell too slow "
-                "(over 60s): can happen if a device is "
-                "connecting/disconnecting right at that moment "
+                f"(over {self._pnp_timeout_seconds:.0f}s): can happen if a "
+                "device is connecting/disconnecting right at that moment "
                 "(slows down the driver stack). If it persists with all "
                 "devices stable, the filter might need to be narrowed "
-                "further."
+                "further, or pnp_timeout_seconds raised in config.json."
             ) from ex
 
         if result.returncode != 0:

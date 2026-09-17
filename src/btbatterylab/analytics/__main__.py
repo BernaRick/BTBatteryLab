@@ -19,16 +19,10 @@ from btbatterylab.analytics.battery_analytics import (
     build_all_reports,
     format_hours,
 )
-
-# Same hardcoded-path limitation as main.py (see docs/roadmap.md,
-# "configuration system") - override with --db until that exists.
-DEFAULT_DB_PATH = (
-    r"C:\Users\PatrickBernardoni\OneDrive - Patrick Bernardoni"
-    r"\Documents\BTBatteryLabData\btbatterylab.db"
-)
+from btbatterylab.config import load_config
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(default_db_path: Path) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Battery analytics (drain rate, estimated runtime, charge "
@@ -37,7 +31,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--db",
-        default=DEFAULT_DB_PATH,
+        default=str(default_db_path),
         help="Path to btbatterylab.db (default: the standard data folder).",
     )
     parser.add_argument(
@@ -108,7 +102,8 @@ def _print_report(report: DeviceReport) -> None:
 
 
 def main() -> None:
-    args = _parse_args()
+    config = load_config()
+    args = _parse_args(default_db_path=config.db_path)
 
     if not Path(args.db).exists():
         print(f"[ERROR] Database not found: {args.db}")

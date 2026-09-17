@@ -238,7 +238,7 @@ Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the rep
 
 For a single double-click with only one console window, run [`build_exe.bat`](./build_exe.bat) (needs the `.venv` above, plus the .NET 8 SDK — it installs PyInstaller itself if missing). It packages the Python collector with PyInstaller and publishes `BluetoothWatcher` self-contained into `dist/release/`; the result, `dist/release/BluetoothWatcher.exe`, starts the Python collector for you in the background (no separate window) when you double-click it.
 
-This has now been verified on real hardware: single console window, background collector startup, `collector.log` populated, and battery readings for classic devices arriving within seconds of connect. It still bakes in the hardcoded data path from `main.py`, so a build only works correctly on the machine its Python source lives on until there's a configuration system (see the roadmap).
+This has now been verified on real hardware: single console window, background collector startup, `collector.log` populated, and battery readings for classic devices arriving within seconds of connect. The data path is resolved automatically (see [Configuration](#configuration) below), so the build is no longer tied to one specific machine/user.
 
 ### Manual start (or if you want to see what `run.bat`/`build_exe.bat` do)
 
@@ -261,7 +261,22 @@ This follows that same `ble-events.jsonl` file live, and polls Windows PnP in th
 
 > **Tip:** start the Python collector before `dotnet run` if you can. The collector only follows *new* lines written after it starts, so if the watcher's initial "device found" events are written first, that device's online/offline status stays unknown (`?`) until the next real connect/disconnect.
 
-This is still an early-development project — `build_exe.bat` above gets you a single double-clickable `.exe`, verified on real hardware, but it's not yet something end users on a different machine could just download and run (still needs the configuration system to remove the hardcoded data path).
+This is still an early-development project — `build_exe.bat` above gets you a single double-clickable `.exe`, verified on real hardware, and it now works from any Windows account without editing source (see [Configuration](#configuration)).
+
+### Configuration
+
+Both the collector and the analytics CLI read a small `config.json`
+inside your data folder (`Documents\BTBatteryLabData\config.json` by
+default — the real Windows "Documents" location is resolved
+automatically, including when it's been moved or redirected, e.g. by
+OneDrive). The file is created for you, with sensible defaults, the
+first time you run either one — just open it and edit the values you
+want to change, no restart tricks needed beyond starting the process
+again. See [config.example.json](./config.example.json) for the full
+list of keys and what each one does (`poll_interval_seconds`,
+`min_poll_spacing_seconds`, `pnp_timeout_seconds`). A missing or
+invalid key is never fatal — it just falls back to its default, with a
+warning printed to the console.
 
 ### Battery analytics: `python -m btbatterylab.analytics`
 

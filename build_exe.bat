@@ -136,9 +136,9 @@ echo Python collector in the background (log in
 echo Documents\BTBatteryLabData\collector.log), without opening a
 echo second console window.
 echo.
-echo Note: this build carries the hardcoded data path that main.py has
-echo today (Patrick's Documents folder) - it isn't portable to
-echo another PC yet until there's a configuration system (see
-echo docs/roadmap.md).
+echo The data folder (Documents\BTBatteryLabData) and its config.json
+echo are resolved automatically for whichever Windows account runs
+echo this .exe - see the README's Configuration section to change any
+echo of the default settings.
 echo.
 pause

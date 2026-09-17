@@ -9,11 +9,13 @@ from btbatterylab.collector.bluetooth_collector import BluetoothCollector
 from btbatterylab.monitoring.tail_monitor import JsonlTailMonitor
 from btbatterylab.storage.sqlite_storage import SqliteStorage
 
-# Minimum spacing between a PnP poll "woken up" by a connection event
-# and the next one, so that several classic devices connecting almost
-# together (e.g. turning on multiple headsets in a row) don't each
-# trigger their own PowerShell poll.
-MIN_POLL_SPACING_SECONDS = 15.0
+# Default minimum spacing between a PnP poll "woken up" by a connection
+# event and the next one, so that several classic devices connecting
+# almost together (e.g. turning on multiple headsets in a row) don't
+# each trigger their own PowerShell poll. Overridable per-instance via
+# UnifiedCollector's min_poll_spacing_seconds parameter (see
+# btbatterylab.config for where that value normally comes from).
+DEFAULT_MIN_POLL_SPACING_SECONDS = 15.0
 
 
 def _is_generic_name(name: str | None) -> bool:
@@ -75,18 +77,24 @@ class UnifiedCollector:
         poll_interval_seconds: float = 300.0,
         failure_retry_seconds: float = 30.0,
         db_path: str | Path | None = None,
+        min_poll_spacing_seconds: float = DEFAULT_MIN_POLL_SPACING_SECONDS,
+        pnp_timeout_seconds: float = 60.0,
     ) -> None:
 
         self.poll_interval_seconds = poll_interval_seconds
         self.failure_retry_seconds = failure_retry_seconds
+        self.min_poll_spacing_seconds = min_poll_spacing_seconds
 
         # Default: the same place as the JSONL, so there's no need to
-        # configure two separate paths until there's a real
-        # configuration system.
+        # configure two separate paths (see btbatterylab.config, which
+        # is what actually resolves both from a single data directory
+        # in normal use).
         if db_path is None:
             db_path = Path(jsonl_path).with_name("btbatterylab.db")
 
-        self._collector = BluetoothCollector()
+        self._collector = BluetoothCollector(
+            pnp_timeout_seconds=pnp_timeout_seconds
+        )
         self._storage = SqliteStorage(db_path)
         self._states: dict[str, DeviceState] = {}
         self._lock = threading.Lock()
@@ -255,9 +263,9 @@ class UnifiedCollector:
         Waits until the next scheduled poll, but wakes up early if a
         connection event without battery arrives (see
         _handle_ble_event) - provided at least
-        MIN_POLL_SPACING_SECONDS has passed since the last poll, so we
-        don't hammer PowerShell when several devices connect almost
-        together.
+        self.min_poll_spacing_seconds has passed since the last poll,
+        so we don't hammer PowerShell when several devices connect
+        almost together.
         """
 
         deadline = time.monotonic() + wait_seconds
@@ -278,10 +286,10 @@ class UnifiedCollector:
             since_last_poll = (
                 time.monotonic() - self._last_poll_time
                 if self._last_poll_time is not None
-                else MIN_POLL_SPACING_SECONDS
+                else self.min_poll_spacing_seconds
             )
 
-            if since_last_poll >= MIN_POLL_SPACING_SECONDS:
+            if since_last_poll >= self.min_poll_spacing_seconds:
                 return  # returns right away: _polling_loop will poll now
 
             # Too soon since the last poll: ignore this trigger and

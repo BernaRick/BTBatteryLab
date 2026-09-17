@@ -23,8 +23,8 @@ Create a functional replacement for manual PowerShell battery logging.
 - Local SQLite database ✅
 - Simplified startup (`run.bat`) ✅
 - Standalone `.exe` packaging (single double-click, no console windows) ✅
+- Configuration system ✅
 - CSV export
-- Configuration system
 - Logging engine
 
 ### Step 2.1 - BLE Presence Monitoring ✅
@@ -138,14 +138,59 @@ Implemented and verified on real hardware:
 - `build_exe.bat`: builds both and assembles them into `dist/release/`, so the whole thing is one double-click (`BluetoothWatcher.exe`); PyInstaller's own intermediate output is built under `%TEMP%` rather than inside the repo, to avoid `Access is denied` errors from OneDrive syncing files mid-build
 - Confirmed on real hardware: single console window, "Python collector started in the background" message, `collector.log` populated (line-buffered stdout), classic-device battery arriving within seconds of connect via the wake-on-connect PnP poll, and the collector process actually terminating (checked in Task Manager) when `BluetoothWatcher.exe` is closed with ENTER
 
-Known limitation: the build still bakes in the hardcoded data path from `main.py` (see the configuration system item above), so it's not yet portable to a machine other than the one it's built from.
+Known limitation, now resolved (see Step 2.5 below): the build used to bake in a data path hardcoded for one specific machine/user.
+
+### Step 2.5 - Configuration System ✅
+
+Objective:
+
+Remove the data path hardcoded for one specific machine (it named the
+developer's own Windows username and OneDrive folder), and make the
+handful of tuning knobs that used to be Python constants (poll
+interval, minimum PnP poll spacing, PnP timeout) adjustable without
+editing source.
+
+Implemented:
+
+- `btbatterylab.config`: resolves the real Windows "Documents" folder
+  the same way `BluetoothWatcher/Program.cs` already did
+  (`Environment.SpecialFolder.MyDocuments`, i.e. the
+  `...\Explorer\User Shell Folders\Personal` registry value) - correct
+  even when Documents has been moved or redirected, e.g. by OneDrive.
+  `BTBatteryLabData` under that folder is the data directory, same as
+  before, just no longer hardcoded to one specific path.
+- `config.json`, created automatically inside the data directory (with
+  documented defaults) the first time the collector or the analytics
+  CLI runs, if it doesn't already exist. Editable at any time; a
+  missing, malformed, or partially-filled file never blocks startup -
+  any invalid or missing key just falls back to its default, with a
+  warning printed for whatever was ignored. See
+  [config.example.json](../config.example.json) at the repo root for
+  the schema (reference only, not read at runtime).
+- Configurable keys: `poll_interval_seconds` (was hardcoded to 300 in
+  `main.py`), `min_poll_spacing_seconds` (was the module constant
+  `MIN_POLL_SPACING_SECONDS` in `unified_collector.py`, 15), and
+  `pnp_timeout_seconds` (was hardcoded to 60 inside
+  `BluetoothCollector.read_battery_levels`).
+- `main.py` and `analytics/__main__.py` (`--db`'s default) both now
+  derive their paths from this shared config instead of a literal
+  string each.
+- `BluetoothWatcher/Program.cs` did **not** need a change here: it was
+  already computing its data directory dynamically via
+  `Environment.SpecialFolder.MyDocuments` rather than a hardcoded
+  path - the earlier docs describing it as hardcoded too were
+  inaccurate. Only the Python side had the real portability bug.
+
+Not covered by this step: relocating the data directory itself to a
+non-default location isn't supported yet (nothing asked for it) -
+`config.json` only tunes the numeric knobs above, and always lives
+inside the default data directory.
 
 ### Status
 
-🟡 In Progress — presence, unified battery collection, storage, and
-standalone `.exe` packaging are done and verified on real hardware;
-CSV export, the configuration system, and the logging engine are
-still open.
+🟡 In Progress — presence, unified battery collection, storage,
+standalone `.exe` packaging, and the configuration system are done and
+verified; CSV export and the logging engine are still open.
 
 ---
 

@@ -1,0 +1,6 @@
+{
+  "_comment": "Reference only - this file at the repo root is never read at runtime. The real config.json lives inside your data folder (Documents\\BTBatteryLabData\\config.json by default) and is created there automatically, with these same defaults, the first time you run the collector or the analytics CLI.",
+  "poll_interval_seconds": 300.0,
+  "min_poll_spacing_seconds": 15.0,
+  "pnp_timeout_seconds": 60.0
+}

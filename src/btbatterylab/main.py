@@ -1,6 +1,7 @@
 import sys
 
 from btbatterylab.collector.unified_collector import UnifiedCollector
+from btbatterylab.config import load_config
 
 
 def main() -> None:
@@ -19,15 +20,17 @@ def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
 
+    config = load_config()
+
+    print(f"Data folder: {config.data_dir}")
+    print(f"Config file: {config.config_path}")
+
     collector = UnifiedCollector(
-        jsonl_path=(
-            r"C:\Users\PatrickBernardoni\OneDrive - Patrick Bernardoni"
-            r"\Documents\BTBatteryLabData\ble-events.jsonl"
-        ),
-        # PnP polling is slow (tens of seconds with 5 paired devices):
-        # every 5 minutes is a reasonable trade-off for now, to be
-        # revisited once there's a configuration system.
-        poll_interval_seconds=300.0,
+        jsonl_path=config.jsonl_path,
+        db_path=config.db_path,
+        poll_interval_seconds=config.poll_interval_seconds,
+        min_poll_spacing_seconds=config.min_poll_spacing_seconds,
+        pnp_timeout_seconds=config.pnp_timeout_seconds,
     )
 
     try:
