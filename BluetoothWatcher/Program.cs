@@ -27,20 +27,19 @@ string logFile =
         dataDirectory,
         "ble-events.jsonl");
 
-// Azzeriamo il log ad ogni avvio per non farlo crescere all'infinito
-// tra una sessione e l'altra - JsonlTailMonitor lato Python comunque
-// ignora tutto il contenuto precedente (si mette in fondo al file
-// appena parte), quindi non e' funzionalmente necessario, solo
-// housekeeping.
+// We reset the log on every startup so it doesn't grow forever across
+// sessions - the Python-side JsonlTailMonitor ignores all existing
+// content anyway (it seeks to the end of the file as soon as it
+// starts), so this isn't functionally necessary, just housekeeping.
 //
-// Va tentato con cautela: run.bat avvia apposta il collector Python
-// PRIMA di questo processo (altrimenti si perdono gli eventi
-// "Startup" iniziali - vedi README), quindi quando arriviamo qui il
-// file potrebbe gia' essere aperto in lettura da Python, e su
-// Windows File.Delete su un file aperto da un altro processo lancia
-// IOException invece di essere ignorato in silenzio come su Linux.
-// In quel caso continuiamo semplicemente in append: meglio un file
-// che si allunga di qualche riga vecchia che un crash all'avvio.
+// This needs to be attempted carefully: run.bat deliberately starts
+// the Python collector BEFORE this process (otherwise the initial
+// "Startup" events get lost - see README), so by the time we get here
+// the file might already be open for reading by Python, and on
+// Windows, File.Delete on a file held open by another process throws
+// IOException instead of being silently ignored like on Linux. In
+// that case we just continue in append mode: better a file with a few
+// extra old lines than a crash on startup.
 try
 {
     if (File.Exists(logFile))
@@ -51,9 +50,9 @@ try
 catch (IOException ex)
 {
     Console.WriteLine(
-        $"Impossibile azzerare il log esistente (probabilmente in " +
-        $"uso dal collector Python gia' avviato): {ex.Message}");
-    Console.WriteLine("Continuo aggiungendo gli eventi in coda al file esistente.");
+        $"Could not reset the existing log (likely in use by an " +
+        $"already-running Python collector): {ex.Message}");
+    Console.WriteLine("Continuing by appending events to the existing file.");
 }
 
 object logLock = new();
@@ -132,7 +131,7 @@ async Task<int?> TryReadBatteryLevelAsync(BluetoothLEDevice device)
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"  [battery] errore lettura: {ex.Message}");
+        Console.WriteLine($"  [battery] read error: {ex.Message}");
         return null;
     }
 }
@@ -152,7 +151,7 @@ async Task HandleConnectionStatusChangedAsync(BluetoothLEDevice device)
 
     Console.WriteLine(
         $"[{timestamp}] {device.Name}: {status}" +
-        (battery is null ? "" : $" (batteria {battery}%)"));
+        (battery is null ? "" : $" (battery {battery}%)"));
 
     LogEvent(
         "ConnectionStatusChanged",
@@ -175,7 +174,7 @@ async Task OnDeviceAddedAsync(DeviceInformation info)
     catch (Exception ex)
     {
         Console.WriteLine(
-            $"Impossibile aprire {info.Name} ({info.Id}): {ex.Message}");
+            $"Could not open {info.Name} ({info.Id}): {ex.Message}");
 
         return;
     }
@@ -209,8 +208,8 @@ async Task OnDeviceAddedAsync(DeviceInformation info)
     }
 
     Console.WriteLine(
-        $"Trovato: {device.Name} [{info.Id}] - stato: {initialStatus}" +
-        (initialBattery is null ? "" : $" (batteria {initialBattery}%)"));
+        $"Found: {device.Name} [{info.Id}] - status: {initialStatus}" +
+        (initialBattery is null ? "" : $" (battery {initialBattery}%)"));
 
     LogEvent(
         "Startup",
@@ -232,18 +231,18 @@ void OnDeviceRemoved(string id)
     }
 }
 
-// --- Dispositivi classici (BR/EDR) ---
+// --- Classic devices (BR/EDR) ---
 //
-// Cuffie/auricolari come le OPPO Enco Air2 o le HD 450BT non hanno
-// un'interfaccia BLE utile: la loro batteria si legge solo lato
-// Python via PnP (BluetoothCollector.read_battery_levels()), non da
-// qui. Quello che possiamo fare qui e' tracciare la loro connessione
-// in tempo reale con l'equivalente classico di BluetoothLEDevice, e
-// scrivere lo stesso tipo di evento nel JSONL (senza BatteryPercent -
-// non e' un dato che questo processo sa leggere per un device
-// classico). Il lato Python, vedendo un evento "Connected" per un
-// device che non conosce come sorgente BLE, fa scattare un poll
-// batteria immediato invece di aspettare il timer.
+// Headsets/earbuds like the OPPO Enco Air2 or the HD 450BT don't have
+// a useful BLE interface: their battery can only be read on the
+// Python side via PnP (BluetoothCollector.read_battery_levels()), not
+// here. What we CAN do here is track their connection in real time
+// with the classic equivalent of BluetoothLEDevice, and write the
+// same kind of event to the JSONL (without BatteryPercent - that's
+// not something this process can read for a classic device). On the
+// Python side, seeing a "Connected" event for a device it doesn't
+// know as a BLE source triggers an immediate battery poll instead of
+// waiting for the timer.
 
 Dictionary<string, BluetoothDevice> trackedClassicDevices = new();
 
@@ -253,7 +252,7 @@ void HandleClassicConnectionStatusChanged(BluetoothDevice device)
 
     string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
 
-    Console.WriteLine($"[{timestamp}] {device.Name} (classico): {status}");
+    Console.WriteLine($"[{timestamp}] {device.Name} (classic): {status}");
 
     LogEvent(
         "ConnectionStatusChanged",
@@ -274,7 +273,7 @@ async Task OnClassicDeviceAddedAsync(DeviceInformation info)
     catch (Exception ex)
     {
         Console.WriteLine(
-            $"Impossibile aprire (classico) {info.Name} ({info.Id}): " +
+            $"Could not open (classic) {info.Name} ({info.Id}): " +
             $"{ex.Message}");
 
         return;
@@ -302,8 +301,8 @@ async Task OnClassicDeviceAddedAsync(DeviceInformation info)
         HandleClassicConnectionStatusChanged(device);
 
     Console.WriteLine(
-        $"Trovato (classico): {device.Name} [{info.Id}] - " +
-        $"stato: {initialStatus}");
+        $"Found (classic): {device.Name} [{info.Id}] - " +
+        $"status: {initialStatus}");
 
     LogEvent(
         "Startup",
@@ -326,21 +325,21 @@ void OnClassicDeviceRemoved(string id)
     }
 }
 
-Console.WriteLine("BTBatteryLab - BLE Watcher (tutti i dispositivi)");
+Console.WriteLine("BTBatteryLab - BLE Watcher (all devices)");
 Console.WriteLine("------------------------------------------------");
 Console.WriteLine();
 Console.WriteLine($"Log file: {logFile}");
 Console.WriteLine();
 
-// --- Collector Python in bundle (build standalone, vedi build_exe.bat) ---
+// --- Bundled Python collector (standalone build, see build_exe.bat) ---
 //
-// Se questo eseguibile e' stato pubblicato con build_exe.bat, accanto a
-// lui c'e' una cartella "btbatterylab" con l'exe generato da PyInstaller:
-// in quel caso lo avviamo noi in background, senza una seconda finestra
-// di console, invece di richiedere due terminali separati come con
-// run.bat. In sviluppo (dotnet run dalla sorgente) quella cartella non
-// esiste: non cambia nulla, si continua a usare run.bat o ad avviare il
-// collector a mano.
+// If this executable was published with build_exe.bat, there's a
+// "btbatterylab" folder next to it with the exe PyInstaller
+// generated: in that case we start it ourselves in the background,
+// without a second console window, instead of requiring two separate
+// terminals like with run.bat. In development (dotnet run from
+// source) that folder doesn't exist: nothing changes, we keep using
+// run.bat or starting the collector by hand.
 string collectorExePath = Path.Combine(
     AppContext.BaseDirectory, "btbatterylab", "btbatterylab.exe");
 
@@ -390,19 +389,19 @@ if (File.Exists(collectorExePath))
     collectorProcess.BeginErrorReadLine();
 
     Console.WriteLine(
-        $"Collector Python avviato in background (log: {collectorLogFile})");
+        $"Python collector started in the background (log: {collectorLogFile})");
 
-    // Stesso motivo dell'attesa in run.bat: JsonlTailMonitor segue solo
-    // le righe *nuove* scritte da questo momento in poi, quindi il
-    // collector deve essere gia' in ascolto prima che i watcher qui
-    // sotto scrivano i loro eventi "Startup".
+    // Same reason for the wait as in run.bat: JsonlTailMonitor only
+    // follows *new* lines written from this point on, so the
+    // collector needs to already be listening before the watchers
+    // below write their "Startup" events.
     await Task.Delay(3000);
 }
 else
 {
     Console.WriteLine(
-        "Collector Python non incluso in questo eseguibile (modalita' " +
-        "sviluppo): avvialo separatamente con run.bat o " +
+        "Python collector not included in this executable (development " +
+        "mode): start it separately with run.bat or " +
         "'python -m btbatterylab.main'.");
 }
 
@@ -415,7 +414,7 @@ DeviceWatcher watcher = DeviceInformation.CreateWatcher(selector);
 watcher.Added += async (_, info) => await OnDeviceAddedAsync(info);
 watcher.Removed += (_, update) => OnDeviceRemoved(update.Id);
 
-Console.WriteLine("Avvio ricerca dispositivi BLE accoppiati...");
+Console.WriteLine("Starting search for paired BLE devices...");
 Console.WriteLine();
 
 watcher.Start();
@@ -427,14 +426,14 @@ DeviceWatcher classicWatcher = DeviceInformation.CreateWatcher(classicSelector);
 classicWatcher.Added += async (_, info) => await OnClassicDeviceAddedAsync(info);
 classicWatcher.Removed += (_, update) => OnClassicDeviceRemoved(update.Id);
 
-Console.WriteLine("Avvio ricerca dispositivi classici accoppiati...");
+Console.WriteLine("Starting search for paired classic devices...");
 Console.WriteLine();
 
 classicWatcher.Start();
 
 Console.WriteLine();
-Console.WriteLine("Monitoring in corso.");
-Console.WriteLine("Premi ENTER per terminare.");
+Console.WriteLine("Monitoring in progress.");
+Console.WriteLine("Press ENTER to stop.");
 Console.WriteLine();
 
 Console.ReadLine();
@@ -451,7 +450,7 @@ if (collectorProcess is not null && !collectorProcess.HasExited)
     catch (Exception ex)
     {
         Console.WriteLine(
-            $"Impossibile fermare il collector Python: {ex.Message}");
+            $"Could not stop the Python collector: {ex.Message}");
     }
 }
 

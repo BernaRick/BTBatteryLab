@@ -6,26 +6,26 @@ from pathlib import Path
 
 class SqliteStorage:
     """
-    Persistenza locale in SQLite per lo storico di device e batteria.
+    Local SQLite persistence for the device and battery history.
 
-    Due tabelle, come da docs/architecture.md:
+    Two tables, as described in docs/architecture.md:
 
-    - devices: una riga per device (chiave = indirizzo Bluetooth), con
-      il nome migliore conosciuto e la prima/ultima volta che ne
-      abbiamo saputo qualcosa (presenza o batteria).
-    - battery_log: una riga per ogni lettura di batteria osservata da
-      uno dei due canali (ble/pnp) - storico grezzo, non filtrato dal
-      "freshest wins" usato per la vista live in UnifiedCollector,
-      cosi' da avere in futuro dati sufficienti per drain rate,
-      runtime estimation, trend di degrado.
+    - devices: one row per device (key = Bluetooth address), with the
+      best known name and the first/last time we learned anything
+      about it (presence or battery).
+    - battery_log: one row per battery reading observed from either
+      channel (ble/pnp) - raw history, not filtered by the
+      "freshest wins" rule used for the live view in UnifiedCollector,
+      so there's enough data in the future for drain rate, runtime
+      estimation, and degradation trends.
 
-    Una connessione sola, condivisa, con lock interno: UnifiedCollector
-    scrive da due thread diversi (tail JSONL sul thread principale,
-    polling PnP su un thread in background).
+    A single, shared connection, with an internal lock: UnifiedCollector
+    writes from two different threads (JSONL tail on the main thread,
+    PnP polling on a background thread).
 
-    Gli errori SQLite vengono intercettati e stampati invece di far
-    cadere il collector: la persistenza e' un side-effect utile ma non
-    deve mai interrompere il monitoraggio live.
+    SQLite errors are caught and printed instead of crashing the
+    collector: persistence is a useful side-effect but must never
+    interrupt live monitoring.
     """
 
     def __init__(self, db_path: str | Path) -> None:
@@ -85,9 +85,10 @@ class SqliteStorage:
         timestamp: datetime,
     ) -> None:
         """
-        Crea il device se non esiste (first_seen = last_seen = timestamp),
-        altrimenti aggiorna il nome (se conosciuto) e sposta in avanti
-        last_seen - mai indietro, nel caso arrivino eventi fuori ordine.
+        Creates the device if it doesn't exist (first_seen = last_seen
+        = timestamp), otherwise updates the name (if known) and moves
+        last_seen forward - never backward, in case events arrive out
+        of order.
         """
 
         ts = self._format_timestamp(timestamp)
@@ -105,7 +106,7 @@ class SqliteStorage:
                     {"address": address, "name": name, "ts": ts},
                 )
         except sqlite3.Error as ex:
-            print(f"[SqliteStorage] Errore su record_device_seen: {ex}")
+            print(f"[SqliteStorage] Error in record_device_seen: {ex}")
 
     def record_battery(
         self,
@@ -115,11 +116,11 @@ class SqliteStorage:
         source: str,
     ) -> None:
         """
-        Registra una lettura di batteria grezza. Duplicati esatti
-        (stesso device, stesso timestamp, stessa fonte - tipico di un
-        poll PnP che ritrova lo stesso BatteryUpdated di prima perche'
-        il device non ha aggiornato la stima) vengono scartati in
-        silenzio dal vincolo UNIQUE.
+        Records a raw battery reading. Exact duplicates (same device,
+        same timestamp, same source - typical of a PnP poll that finds
+        the same BatteryUpdated as before because the device hasn't
+        refreshed its estimate) are silently discarded by the UNIQUE
+        constraint.
         """
 
         ts = self._format_timestamp(timestamp)
@@ -135,7 +136,7 @@ class SqliteStorage:
                     (address, ts, battery_percent, source),
                 )
         except sqlite3.Error as ex:
-            print(f"[SqliteStorage] Errore su record_battery: {ex}")
+            print(f"[SqliteStorage] Error in record_battery: {ex}")
 
     def close(self) -> None:
         with self._lock:

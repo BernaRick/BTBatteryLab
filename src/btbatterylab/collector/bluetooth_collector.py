@@ -39,9 +39,9 @@ _ADDRESS_PATTERN = re.compile(r"DEV_([0-9A-Fa-f]{12})")
 
 def extract_address(instance_id: str | None) -> str | None:
     """
-    Estrae l'indirizzo Bluetooth (12 cifre hex) da un InstanceId PnP di
-    Windows nel formato "classico" (...DEV_<address>...). Usata da
-    discover(). Restituisce None se il pattern non viene trovato.
+    Extracts the Bluetooth address (12 hex digits) from a Windows PnP
+    InstanceId in the "classic" format (...DEV_<address>...). Used by
+    discover(). Returns None if the pattern isn't found.
     """
 
     if not instance_id:
@@ -79,7 +79,7 @@ class BluetoothCollector:
             )
         except subprocess.TimeoutExpired as ex:
             raise RuntimeError(
-                "Discovery via PowerShell troppo lenta (oltre 15s)."
+                "Discovery via PowerShell too slow (over 15s)."
             ) from ex
 
         if result.returncode != 0:
@@ -127,24 +127,24 @@ class BluetoothCollector:
 
     def read_battery_levels(self) -> list[BatteryReading]:
         """
-        Interroga i nodi PnP di tutti i dispositivi Bluetooth (non solo
-        quelli in Class='Bluetooth': un device classico come cuffie/
-        auricolari riporta spesso la batteria sul suo nodo Hands-Free
-        AudioGateway, che e' Class='System') per trovare chi espone
-        davvero un valore di batteria a Windows.
+        Queries the PnP nodes of all Bluetooth devices (not only the ones
+        in Class='Bluetooth': a classic device like earbuds/headsets
+        often reports its battery on its Hands-Free AudioGateway node,
+        which is Class='System') to find who actually exposes a battery
+        value to Windows.
 
-        Restituisce una BatteryReading per ogni indirizzo Bluetooth che
-        riporta un valore, con il timestamp REALE dell'ultimo
-        aggiornamento visto da Windows (non "adesso"): per un device
-        classico non connesso al momento della query, questo valore
-        puo' risalire a minuti o ore prima, ed e' corretto che il dato
-        lo rifletta invece di spacciarlo per una lettura fresca.
+        Returns a BatteryReading for every Bluetooth address that
+        reports a value, with the REAL timestamp of the last update seen
+        by Windows (not "now"): for a classic device not connected at
+        query time, this value can go back minutes or hours, and it's
+        correct for the data to reflect that instead of passing it off
+        as a fresh reading.
 
-        device_id e' l'indirizzo Bluetooth (via DEVPKEY_Bluetooth_
-        DeviceAddress, piu' affidabile di un parsing dell'InstanceId
-        visto quanto sono eterogenei i formati tra i vari nodi), cosi'
-        da ricollegare la lettura al Device giusto (Device.address)
-        anche quando arriva da un nodo diverso da quello scoperto in
+        device_id is the Bluetooth address (via DEVPKEY_Bluetooth_
+        DeviceAddress, more reliable than parsing the InstanceId given
+        how inconsistent the formats are across nodes), so the reading
+        can be matched back to the right Device (Device.address) even
+        when it comes from a different node than the one discovered in
         discover().
         """
 
@@ -194,12 +194,12 @@ class BluetoothCollector:
             )
         except subprocess.TimeoutExpired as ex:
             raise RuntimeError(
-                "Interrogazione batteria via PowerShell troppo lenta "
-                "(oltre 60s): puo' capitare se un device sta "
-                "connettendosi/disconnettendosi proprio in quel momento "
-                "(rallenta lo stack driver). Se persiste con tutti i "
-                "device stabili, potrebbe servire restringere ulteriormente "
-                "il filtro."
+                "Battery query via PowerShell too slow "
+                "(over 60s): can happen if a device is "
+                "connecting/disconnecting right at that moment "
+                "(slows down the driver stack). If it persists with all "
+                "devices stable, the filter might need to be narrowed "
+                "further."
             ) from ex
 
         if result.returncode != 0:
@@ -208,9 +208,9 @@ class BluetoothCollector:
         stdout = result.stdout.strip()
         raw_items = json.loads(stdout) if stdout else []
 
-        # "ForEach-Object" senza nessun oggetto emesso produce $null,
-        # che ConvertTo-Json serializza come la stringa "null" (non
-        # una stringa vuota): nessun device ha riportato batteria.
+        # "ForEach-Object" with no object emitted produces $null, which
+        # ConvertTo-Json serializes as the string "null" (not an empty
+        # string): no device reported a battery value.
         if raw_items is None:
             raw_items = []
 
@@ -219,14 +219,14 @@ class BluetoothCollector:
 
         now = datetime.now()
 
-        # Lo stesso device puo' avere piu' nodi PnP che riportano
-        # ciascuno un valore di batteria (es. il nodo Hands-Free e un
-        # altro nodo BLE-correlato), non sempre allineati - e Windows
-        # a volte scrive l'indirizzo con maiuscole diverse a seconda
-        # del nodo. Raggruppiamo per indirizzo normalizzato e per
-        # ognuno teniamo la lettura con il timestamp piu' recente,
-        # invece del primo che capita nell'ordine (arbitrario) con
-        # cui Get-PnpDevice restituisce i nodi.
+        # The same device can have multiple PnP nodes each reporting a
+        # battery value (e.g. the Hands-Free node and another
+        # BLE-related node), not always in agreement - and Windows
+        # sometimes writes the address with different casing depending
+        # on the node. We group by normalized address and for each one
+        # keep the reading with the most recent timestamp, instead of
+        # whichever comes first in the (arbitrary) order Get-PnpDevice
+        # returns the nodes.
         best_by_device: dict[str, tuple[int, datetime]] = {}
 
         for item in raw_items:
@@ -250,18 +250,17 @@ class BluetoothCollector:
 
             if updated_raw:
                 try:
-                    # normalizza "Z" in "+00:00": alcune versioni di
-                    # Python precedenti alla 3.11 non accettano "Z" in
-                    # fromisoformat().
+                    # normalize "Z" to "+00:00": some Python versions
+                    # before 3.11 don't accept "Z" in fromisoformat().
                     normalized = updated_raw.replace("Z", "+00:00")
                     parsed = datetime.fromisoformat(normalized)
 
                     if parsed.tzinfo is not None:
-                        # Riporta a ora locale "naive", coerente con
-                        # datetime.now() usato altrove (es. il
-                        # fallback qui sopra, o il confronto nel
-                        # blocco __main__): senza questo, sottrarre
-                        # un timestamp "aware" da uno "naive" solleva
+                        # Convert back to "naive" local time, consistent
+                        # with datetime.now() used elsewhere (e.g. the
+                        # fallback above, or the comparison in the
+                        # __main__ block): without this, subtracting an
+                        # "aware" timestamp from a "naive" one raises
                         # TypeError.
                         parsed = parsed.astimezone().replace(tzinfo=None)
 
@@ -290,7 +289,7 @@ if __name__ == "__main__":
 
     devices = collector.discover()
 
-    print("=== Dispositivi Bluetooth trovati ===")
+    print("=== Bluetooth devices found ===")
     for device in devices:
         print(
             f"- {device.name} ({device.status}) "
@@ -298,7 +297,7 @@ if __name__ == "__main__":
         )
 
     print()
-    print("=== Livelli batteria disponibili ===")
+    print("=== Available battery levels ===")
     readings = collector.read_battery_levels()
 
     devices_by_address = {
@@ -308,19 +307,19 @@ if __name__ == "__main__":
     }
 
     if not readings:
-        print("Nessun dispositivo ha riportato un livello di batteria.")
+        print("No device reported a battery level.")
     else:
         now = datetime.now()
 
         for reading in readings:
             device = devices_by_address.get(reading.device_id)
-            label = device.name if device else "(nome sconosciuto)"
+            label = device.name if device else "(unknown name)"
 
             age_minutes = (now - reading.timestamp).total_seconds() / 60
             freshness = (
-                "live/recente"
+                "live/recent"
                 if age_minutes < 2
-                else f"vecchia di {age_minutes:.0f} min"
+                else f"stale by {age_minutes:.0f} min"
             )
 
             print(

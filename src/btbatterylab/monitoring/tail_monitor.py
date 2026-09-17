@@ -10,13 +10,13 @@ class JsonlConsumer(Protocol):
 
 class JsonlTailMonitor:
     """
-    Segue in tempo reale un file JSONL.
+    Follows a JSONL file in real time.
 
-    Quando viene aggiunta una nuova riga, la inoltra al consumer
-    (qualunque oggetto con un metodo process_json_line(line)).
-    Non conosce ne' assume nulla sullo stato interno del consumer:
-    e' compito del consumer stesso decidere se/cosa stampare o fare
-    con ogni riga processata.
+    When a new line is added, it forwards it to the consumer (any
+    object with a process_json_line(line) method). It doesn't know or
+    assume anything about the consumer's internal state: it's up to the
+    consumer itself to decide whether/what to print or do with each
+    processed line.
     """
 
     def __init__(
@@ -34,14 +34,14 @@ class JsonlTailMonitor:
 
     def stop(self) -> None:
         """
-        Ferma il monitor.
+        Stops the monitor.
         """
 
         self._stop_event.set()
 
     def start(self) -> None:
         """
-        Avvia il tailing del file.
+        Starts tailing the file.
         """
 
         print(f"Waiting for file: {self.path}")
@@ -59,7 +59,7 @@ class JsonlTailMonitor:
             encoding="utf-8"
         ) as file:
 
-            # Vai in fondo al file
+            # Seek to the end of the file
             file.seek(0, 2)
 
             while not self._stop_event.is_set():

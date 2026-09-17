@@ -9,18 +9,18 @@ from btbatterylab.collector.bluetooth_collector import BluetoothCollector
 from btbatterylab.monitoring.tail_monitor import JsonlTailMonitor
 from btbatterylab.storage.sqlite_storage import SqliteStorage
 
-# Spaziatura minima tra un poll PnP "svegliato" da un evento di
-# connessione e il successivo, cosi' che piu' device classici che si
-# connettono quasi insieme (es. accensione di piu' cuffie di fila)
-# non facciano partire un poll PowerShell a testa.
+# Minimum spacing between a PnP poll "woken up" by a connection event
+# and the next one, so that several classic devices connecting almost
+# together (e.g. turning on multiple headsets in a row) don't each
+# trigger their own PowerShell poll.
 MIN_POLL_SPACING_SECONDS = 15.0
 
 
 def _is_generic_name(name: str | None) -> bool:
     """
-    Il lato BLE del watcher a volte non conosce il nome vero di un
-    device dual-mode e riporta solo "Bluetooth <mac>": non e' un
-    nome utile, meglio tenerlo come ultima spiaggia.
+    The BLE side of the watcher sometimes doesn't know the real name of
+    a dual-mode device and only reports "Bluetooth <mac>": not a useful
+    name, better kept as a last resort.
     """
 
     return not name or name.lower().startswith("bluetooth ")
@@ -29,13 +29,13 @@ def _is_generic_name(name: str | None) -> bool:
 @dataclass
 class DeviceState:
     """
-    Vista corrente, per indirizzo Bluetooth, dello stato combinato dei
-    due canali di raccolta - la fonte di verita' in memoria durante
-    l'esecuzione di UnifiedCollector, usata per la stampa a console.
+    Current view, per Bluetooth address, of the combined state of the
+    two collection channels - the in-memory source of truth while
+    UnifiedCollector runs, used for the console output.
 
-    Ogni lettura di batteria osservata (non solo quella che "vince" in
-    questa vista) viene comunque registrata su SQLite via SqliteStorage
-    - vedi _handle_ble_event/_poll_pnp_battery.
+    Every observed battery reading (not only the one that "wins" in
+    this view) still gets recorded to SQLite via SqliteStorage - see
+    _handle_ble_event/_poll_pnp_battery.
     """
 
     address: str
@@ -44,29 +44,29 @@ class DeviceState:
     last_seen: datetime | None = None
     battery_percent: int | None = None
     battery_timestamp: datetime | None = None
-    battery_source: str | None = None  # "ble" o "pnp"
+    battery_source: str | None = None  # "ble" or "pnp"
 
 
 class UnifiedCollector:
     """
-    Combina i due canali di raccolta, complementari e non
-    sovrapponibili, in un'unica vista per-device:
+    Combines the two collection channels, complementary and
+    non-overlapping, into a single per-device view:
 
-    - "ble": eventi push in tempo reale scritti da BluetoothWatcher
-      (C#) su ble-events.jsonl. Copre presenza (online/offline) per
-      ogni device BLE accoppiato, e batteria live per chi espone un
-      GATT Battery Service (es. mouse, tastiere).
+    - "ble": real-time push events written by BluetoothWatcher (C#) to
+      ble-events.jsonl. Covers presence (online/offline) for every
+      paired BLE device, and live battery for whichever ones expose a
+      GATT Battery Service (e.g. mice, keyboards).
 
-    - "pnp": polling periodico via PowerShell/PnP
-      (BluetoothCollector.read_battery_levels()), l'unico modo oggi
-      di leggere la batteria dei device classici (cuffie/auricolari)
-      che non la espongono via BLE. Piu' lento (decine di secondi),
-      per questo va a polling invece che in tempo reale.
+    - "pnp": periodic polling via PowerShell/PnP
+      (BluetoothCollector.read_battery_levels()), currently the only
+      way to read the battery of classic devices (earbuds/headsets)
+      that don't expose it over BLE. Slower (tens of seconds), which is
+      why it's polled instead of real-time.
 
-    Quando entrambi i canali hanno un valore di batteria per lo
-    stesso indirizzo, vince quello con il timestamp piu' recente -
-    stesso principio gia' usato dentro read_battery_levels() per i
-    device con piu' nodi PnP.
+    When both channels have a battery value for the same address, the
+    one with the most recent timestamp wins - the same principle
+    already used inside read_battery_levels() for devices with
+    multiple PnP nodes.
     """
 
     def __init__(
@@ -80,8 +80,8 @@ class UnifiedCollector:
         self.poll_interval_seconds = poll_interval_seconds
         self.failure_retry_seconds = failure_retry_seconds
 
-        # Default: lo stesso posto del JSONL, cosi' non serve
-        # configurare due path separati finche' non esiste un vero
+        # Default: the same place as the JSONL, so there's no need to
+        # configure two separate paths until there's a real
         # configuration system.
         if db_path is None:
             db_path = Path(jsonl_path).with_name("btbatterylab.db")
@@ -100,7 +100,7 @@ class UnifiedCollector:
             consumer=self,
         )
 
-    # --- interfaccia richiesta da JsonlTailMonitor (JsonlConsumer) ---
+    # --- interface required by JsonlTailMonitor (JsonlConsumer) ---
 
     def process_json_line(self, line: str) -> None:
         line = line.strip()
@@ -112,7 +112,7 @@ class UnifiedCollector:
 
         self._handle_ble_event(event)
 
-    # --- canale "ble" ---
+    # --- "ble" channel ---
 
     def _handle_ble_event(self, event: dict) -> None:
         event_type = event.get("Event")
@@ -165,31 +165,31 @@ class UnifiedCollector:
 
         self._print_state(address)
 
-        # I device classici (BR/EDR, es. cuffie senza interfaccia BLE)
-        # non possono riportare la batteria da questo canale: il loro
-        # evento "Connected" arriva sempre con BatteryPercent=null.
-        # Invece di aspettare fino a poll_interval_seconds per scoprire
-        # la batteria, facciamo scattare subito un poll PnP. Innocuo
-        # anche per un device BLE senza Battery Service: nel peggiore
-        # dei casi e' un poll PnP in piu', limitato dalla spaziatura
-        # minima in _wait_for_next_poll.
+        # Classic devices (BR/EDR, e.g. headsets without a BLE
+        # interface) can't report battery from this channel: their
+        # "Connected" event always arrives with BatteryPercent=null.
+        # Instead of waiting up to poll_interval_seconds to find out
+        # the battery, we trigger a PnP poll right away. Harmless even
+        # for a BLE device without a Battery Service: worst case it's
+        # one extra PnP poll, capped by the minimum spacing in
+        # _wait_for_next_poll.
         if online is True and battery_percent is None:
             self._poll_now_event.set()
 
-    # --- canale "pnp" ---
+    # --- "pnp" channel ---
 
     def _poll_pnp_battery(self) -> bool:
         """
-        Restituisce True se il polling e' andato a buon fine, False
-        altrimenti (usato da _polling_loop per decidere se ritentare
-        subito invece di aspettare l'intero poll_interval_seconds).
+        Returns True if the poll succeeded, False otherwise (used by
+        _polling_loop to decide whether to retry right away instead of
+        waiting the full poll_interval_seconds).
         """
 
         try:
             devices = self._collector.discover()
             readings = self._collector.read_battery_levels()
         except Exception as ex:
-            print(f"[UnifiedCollector] Errore durante il polling PnP: {ex}")
+            print(f"[UnifiedCollector] Error during PnP polling: {ex}")
             return False
 
         names_by_address = {
@@ -252,11 +252,12 @@ class UnifiedCollector:
 
     def _wait_for_next_poll(self, wait_seconds: float) -> None:
         """
-        Aspetta fino al prossimo poll programmato, ma si sveglia prima
-        se arriva un evento di connessione senza batteria (vedi
-        _handle_ble_event) - a patto che sia passato almeno
-        MIN_POLL_SPACING_SECONDS dall'ultimo poll, per non martellare
-        PowerShell se piu' device si connettono quasi insieme.
+        Waits until the next scheduled poll, but wakes up early if a
+        connection event without battery arrives (see
+        _handle_ble_event) - provided at least
+        MIN_POLL_SPACING_SECONDS has passed since the last poll, so we
+        don't hammer PowerShell when several devices connect almost
+        together.
         """
 
         deadline = time.monotonic() + wait_seconds
@@ -281,13 +282,13 @@ class UnifiedCollector:
             )
 
             if since_last_poll >= MIN_POLL_SPACING_SECONDS:
-                return  # esce subito: _polling_loop fara' un poll ora
+                return  # returns right away: _polling_loop will poll now
 
-            # Troppo presto rispetto all'ultimo poll: ignora questo
-            # trigger e continua ad aspettare il resto del tempo
-            # pianificato (o un prossimo trigger, piu' avanti).
+            # Too soon since the last poll: ignore this trigger and
+            # keep waiting out the rest of the scheduled time (or a
+            # later trigger).
 
-    # --- helper condivisi ---
+    # --- shared helpers ---
 
     @staticmethod
     def _parse_timestamp(raw: str | None) -> datetime | None:
@@ -338,9 +339,9 @@ class UnifiedCollector:
             return
 
         if state.battery_percent is not None:
-            battery = f"{state.battery_percent}% (fonte: {state.battery_source})"
+            battery = f"{state.battery_percent}% (source: {state.battery_source})"
         else:
-            battery = "n/d"
+            battery = "n/a"
 
         if state.online is True:
             online = "online"
@@ -352,14 +353,14 @@ class UnifiedCollector:
         print(
             f"[{datetime.now():%H:%M:%S}] "
             f"{state.name or address} [{address}]: "
-            f"{online}, batteria {battery}"
+            f"{online}, battery {battery}"
         )
 
-    # --- ciclo di vita ---
+    # --- lifecycle ---
 
     def snapshot(self) -> dict[str, DeviceState]:
         """
-        Copia dello stato corrente di ogni device conosciuto finora.
+        Copy of the current state of every device known so far.
         """
 
         with self._lock:
@@ -367,15 +368,15 @@ class UnifiedCollector:
 
     def start(self) -> None:
         """
-        Avvia entrambi i canali. Chiamata bloccante (segue il file
-        JSONL sul thread corrente) finche' non si chiama stop() da
-        un altro thread o non arriva un KeyboardInterrupt.
+        Starts both channels. Blocking call (follows the JSONL file on
+        the current thread) until stop() is called from another thread
+        or a KeyboardInterrupt arrives.
         """
 
-        # Il file JSONL lo si vede gia' stampato da JsonlTailMonitor
-        # ("Waiting for file"/"Following"), ma il database no - senza
-        # questa riga l'unico modo per sapere dove SqliteStorage sta
-        # scrivendo e' leggere il codice.
+        # The JSONL file is already shown by JsonlTailMonitor ("Waiting
+        # for file"/"Following"), but the database isn't - without this
+        # line, the only way to know where SqliteStorage is writing is
+        # to read the code.
         print(f"Database: {self._storage.db_path}")
 
         self._polling_thread = threading.Thread(
