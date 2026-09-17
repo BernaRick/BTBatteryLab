@@ -174,16 +174,51 @@ still open.
 
 ### Features
 
-- Drain rate calculation
-- Runtime estimation
-- Charge session detection
-- Discharge session detection
+- Drain rate calculation ✅
+- Runtime estimation ✅
+- Charge session detection ✅
+- Discharge session detection ✅
 - Daily statistics
 - Presence-aware analytics
 
+### Step 3.1 - Battery Analytics over `battery_log` ✅
+
+Objective:
+
+Turn the raw per-reading history already persisted by `SqliteStorage`
+(Step 2.3) into per-device insight, without needing the dashboard
+(Phase 2) to exist first.
+
+Implemented:
+
+- `src/btbatterylab/analytics/battery_analytics.py`: reads
+  `battery_log` for a device within a time window and groups
+  consecutive readings into `BatterySession`s — a run that's all
+  decreasing (discharge) or all increasing (charge); a flat reading
+  extends the current session instead of splitting it
+- Drain rate: percent-per-hour, weighted by each discharge session's
+  duration (so one short, noisy run doesn't skew the result as much
+  as a long, representative one)
+- Estimated runtime: the device's last known battery percent divided
+  by that drain rate — a projection from past behavior, not a live
+  countdown (this module has no access to `UnifiedCollector`'s live
+  in-memory state, only finished history)
+- Charge sessions: the increasing runs, with start/end time and
+  percent gained
+- Per-device summary: reading count, min/max/average percent over
+  the window, last known percent/timestamp/source
+- `python -m btbatterylab.analytics` CLI (`--days`, `--device`,
+  `--db`) prints a report for every device, or a filtered subset —
+  see [Getting Started](../README.md#battery-analytics-python--m-btbatterylabanalytics)
+
+Not yet implemented: daily statistics and presence-aware analytics
+(cross-referencing drain rate against online/offline periods).
+
 ### Status
 
-⚪ Planned
+🟡 In Progress — drain rate, runtime estimation, and charge/discharge
+session detection are implemented as a CLI report over `battery_log`;
+daily statistics and presence-aware analytics are still open.
 
 ---
 
