@@ -18,9 +18,11 @@ Create a functional replacement for manual PowerShell battery logging.
 
 ### Features
 
-- Bluetooth device discovery
-- Battery information collection
-- Local SQLite database
+- Bluetooth device discovery ✅
+- Battery information collection ✅
+- Local SQLite database ✅
+- Simplified startup (`run.bat`) ✅
+- Standalone `.exe` packaging (single double-click, no console windows)
 - CSV export
 - Configuration system
 - Logging engine
@@ -64,27 +66,80 @@ BTBatteryLab
 DeviceStatus
 ```
 
-### Step 2.2 - Battery Collection Gating
+> **Update:** this step has since been extended to cover classic
+> (BR/EDR) devices too, and its implementation was folded into
+> `UnifiedCollector` together with battery collection — see
+> **Step 2.2** below, which replaces the original "Battery Collection
+> Gating" plan with what was actually built.
+
+### Step 2.2 - Unified Battery Collection ✅
 
 Objective:
 
-Collect battery information only when the device is online.
+Collect battery information from every paired device, BLE and
+classic (BR/EDR) alike, without relying on a single "online → collect,
+offline → skip" rule — BLE devices report presence but not always
+battery, and classic devices report neither over BLE.
+
+Implemented:
+
+- `UnifiedCollector`, combining two channels into one per-device view
+- `ble` channel: presence + battery (when available) over BLE, pushed in real time from `BluetoothWatcher`
+- `pnp` channel: periodic PowerShell/PnP polling (`BluetoothCollector`), the only way to read battery for classic devices that don't expose it over BLE
+- Freshest-timestamp-wins merge when both channels report a battery value for the same device
+- Wake-on-connect: a classic device's `Connected` event (no battery over BLE) triggers an immediate PnP poll instead of waiting for the next scheduled one, throttled so several devices connecting close together don't each trigger their own poll
+- Every raw reading from both channels persisted to SQLite (see Step 2.3), independent of the in-memory merge
+
+Validated scenario:
+
+```text
+OPPO Enco Air2 (classic) connects
+    ↓
+BluetoothWatcher logs "Connected", no battery
+    ↓
+UnifiedCollector triggers an immediate PnP poll
+    ↓
+Battery percentage available within seconds, instead of up to
+poll_interval_seconds later
+```
+
+### Step 2.3 - SQLite Storage ✅
+
+Objective:
+
+Persist every battery reading and known device locally, so later
+phases (analytics, dashboard) have real historical data to work with.
+
+Implemented:
+
+- `SqliteStorage`, one shared connection (WAL mode) across the JSONL-tailing and PnP-polling threads
+- `devices` table: address as primary key, name, first/last seen (upsert keeps the best known name, `last_seen` never regresses)
+- `battery_log` table: every raw reading from either channel, deduplicated only on exact repeats
+- Database file stored alongside `ble-events.jsonl`, outside the git repository (see [Getting Started](../README.md#getting-started))
+
+See [docs/architecture.md](./architecture.md#storage) for the full schema.
+
+### Step 2.4 - Repository Consolidation & Simplified Startup ✅
+
+Objective:
+
+Keep the C# watcher and the Python collector in one place, with one
+easy way to start both.
+
+Implemented:
+
+- `BluetoothWatcher` folded into this repository under `BluetoothWatcher/`, full commit history preserved via `git subtree`
+- `run.bat` starts both processes, in the right order, from one double-click
 
 Planned:
 
-```text
-Device online
-        ↓
-Collect battery data
-
-Device offline
-        ↓
-Skip collection
-```
+- Real standalone `.exe` packaging, so running BTBatteryLab doesn't require a Python/`.NET` dev setup at all (tracked in the Features list above)
 
 ### Status
 
-🟡 In Progress
+🟡 In Progress — presence, unified battery collection, and storage
+are done; CSV export, the configuration system, the logging engine,
+and standalone `.exe` packaging are still open.
 
 ---
 

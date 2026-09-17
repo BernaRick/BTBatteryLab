@@ -45,6 +45,14 @@ Bluetooth Devices
 
 # Components
 
+In the current implementation, the **BLE Presence Layer** and
+**Collector** layers below are one and the same component,
+`UnifiedCollector` — it doesn't just consume presence events, it also
+owns the PnP polling channel and the merge logic. They're kept as
+separate boxes in the diagram above because they're separate
+*responsibilities*, and could be split into separate classes later if
+either grows enough to warrant it.
+
 ## BLE Presence Layer
 
 Responsibilities:
@@ -76,13 +84,20 @@ ble-events.jsonl
 JsonlTailMonitor
         |
         v
-BlePresenceMonitor
+UnifiedCollector (_handle_ble_event)
         |
         v
-DeviceStatus
+DeviceState (in-memory) + SqliteStorage
 ```
 
 `BluetoothWatcher` lives in this same repository under [`BluetoothWatcher/`](../BluetoothWatcher) — it used to be a separate repo, but was folded in (with its full commit history) so there is a single project to build and run. See [Getting Started](../README.md#getting-started) in the root README for how to run it.
+
+An earlier, BLE-only prototype (`monitoring/ble_presence_monitor.py`,
+`BlePresenceMonitor` + `DeviceStatus`) is still in the tree but is no
+longer wired into `main.py` — it's been superseded by
+`UnifiedCollector`, which folds presence tracking and battery
+collection (both channels) into one component. See
+[Collector](#collector) below.
 
 Device state mapping:
 
@@ -104,38 +119,57 @@ DeviceStatus(
 
 ## Collector
 
+Implemented as `UnifiedCollector`
+(`src/btbatterylab/collector/unified_collector.py`), which combines
+two complementary, non-overlapping data channels into one per-device
+view (`DeviceState`):
+
+- **`ble`** — real-time push events from `BluetoothWatcher`, tailed
+  from `ble-events.jsonl` via `JsonlTailMonitor`. Covers presence
+  (online/offline) for every paired BLE device, plus live battery for
+  the ones exposing a GATT Battery Service (e.g. mice, keyboards).
+- **`pnp`** — periodic polling via PowerShell/PnP
+  (`BluetoothCollector.discover()` /
+  `BluetoothCollector.read_battery_levels()`, in
+  `collector/bluetooth_collector.py`). The only way today to read
+  battery for classic (BR/EDR) devices — earbuds, headsets — that
+  don't expose it over BLE. Slower (tens of seconds with several
+  paired devices), so it runs on its own thread on a timer
+  (`poll_interval_seconds`, 5 minutes by default) instead of in real
+  time.
+
 Responsibilities:
 
-- Discover Bluetooth devices
-- Read battery information
-- Normalize device data
-- Generate telemetry events
+- Discover Bluetooth devices (via the `pnp` channel)
+- Read battery information (from either channel)
+- Merge both channels into a single live view per device
+- Persist every reading to SQLite (see [Storage](#storage))
 
-Input:
+Merge rule: when both channels have a battery value for the same
+address, the live view (`DeviceState`, used for the console output)
+keeps whichever has the more recent timestamp. This only affects the
+live view — every raw reading from both channels is still written to
+`battery_log` regardless of which one "wins", so no historical data
+is lost.
 
-- Windows Bluetooth APIs
-- DeviceStatus
+Wake-on-connect: a classic device can't report its own battery over
+BLE, so its `Connected` event always arrives with no battery value.
+Instead of waiting up to `poll_interval_seconds` to find out, that
+event triggers an immediate PnP poll — throttled by
+`MIN_POLL_SPACING_SECONDS` (15s) so several devices connecting close
+together (e.g. powering on more than one headset in a row) don't each
+trigger their own PowerShell poll.
 
-Collection rules:
-
-```text
-Device online
-        ↓
-Collect battery data
-
-Device offline
-        ↓
-Skip collection
-```
-
-Output:
+Output (one row per raw reading — see [Storage](#storage) for the
+actual schema):
 
 ```python
 {
-    "device_id": "...",
-    "device_name": "...",
-    "battery_percent": 80,
-    "timestamp": "..."
+    "address": "FF8EDDAAF1CD",
+    "device_name": "MX Master 2S",
+    "battery_percent": 90,
+    "timestamp": "...",
+    "source": "ble",  # o "pnp"
 }
 ```
 
@@ -304,10 +338,11 @@ All analytics are generated from collected telemetry rather than static estimate
 
 ```text
 Phase 1 - Foundation
-    ├── BLE Presence Monitoring     ✅
-    ├── Device Availability Model   ✅
-    ├── JSONL Event Pipeline        ✅
-    ├── Battery Collection          ✅
-    ├── SQLite Storage              ✅
-    └── Analytics                   ⏳
+    ├── Device Presence Monitoring (BLE + classic)  ✅
+    ├── Device Availability Model                   ✅
+    ├── JSONL Event Pipeline                        ✅
+    ├── Battery Collection (BLE + PnP, unified)     ✅
+    ├── SQLite Storage                              ✅
+    ├── Simplified Startup (run.bat)                ✅
+    └── Analytics                                   ⏳
 ```

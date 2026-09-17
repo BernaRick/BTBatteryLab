@@ -20,19 +20,22 @@ The project originated from a real-world investigation into abnormal battery dra
 
 ### Latest Milestone ✅
 
-BTBatteryLab now supports real-time Bluetooth device presence detection using native Windows BLE APIs.
+BTBatteryLab now unifies two complementary data channels — real-time BLE presence/battery events and periodic PnP battery polling for classic (BR/EDR) devices — into a single collector, and persists every reading to a local SQLite database.
 
 Validated scenario:
 
 ```text
-Mouse OFF  → online=False
-Mouse ON   → online=True
+Mouse OFF   → online=False
+Mouse ON    → online=True, battery read live over BLE
+Headset ON  → online=True, battery read within seconds via a
+              triggered PnP poll (no BLE battery available)
 ```
 
-Current reference device:
+Reference devices used during development:
 
 ```text
-Logitech MX Master 2S
+Logitech MX Master 2S (BLE, GATT Battery Service)
+OPPO Enco Air2 (classic, PnP battery polling)
 ```
 
 ---
