@@ -32,6 +32,18 @@ from datetime import datetime, timedelta
 
 DEFAULT_WINDOW_DAYS = 30
 
+# A session shorter than this is treated as reporting noise rather
+# than a real trend, and is dropped before computing the drain rate or
+# showing up as a charge session - discovered from a real-data test
+# run: two readings a couple of minutes apart (e.g. a stale cached
+# value being corrected right after a reconnect, or two channels
+# disagreeing briefly) produced "discharge" or "charge" sessions with
+# a physically impossible rate (300+%/h) that then dominated the
+# weighted average, since there was little other data in the window.
+# A genuine discharge/charge trend is expected to span much longer
+# than this.
+MIN_SESSION_DURATION_HOURS = 10 / 60  # 10 minutes
+
 
 def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value)
@@ -172,6 +184,23 @@ def _build_sessions(
     return sessions
 
 
+def _drop_noise_sessions(
+    sessions: list[BatterySession],
+) -> list[BatterySession]:
+    """
+    Drops sessions shorter than MIN_SESSION_DURATION_HOURS - see the
+    comment on that constant. Applied to both directions: a too-short
+    "charge" session is just as likely to be noise as a too-short
+    "discharge" one.
+    """
+
+    return [
+        session
+        for session in sessions
+        if session.duration_hours >= MIN_SESSION_DURATION_HOURS
+    ]
+
+
 def _weighted_drain_rate(sessions: list[BatterySession]) -> float | None:
     """
     Percent per hour, weighted by session duration rather than a plain
@@ -201,6 +230,7 @@ def build_device_report(
 
     percents = [p for _, p, _ in readings]
     sessions = _build_sessions(readings)
+    sessions = _drop_noise_sessions(sessions)
     discharge_sessions = [s for s in sessions if s.direction == "discharge"]
     charge_sessions = [s for s in sessions if s.direction == "charge"]
 
