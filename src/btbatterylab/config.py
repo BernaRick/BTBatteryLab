@@ -31,15 +31,27 @@ See config.example.json at the repo root for a documented copy of the
 schema (that file itself is never read at runtime - it exists purely
 as reference for anyone reading the repo, since the real config.json
 lives in the data directory, not in the repo).
+
+Note on logging: this module can be called before
+btbatterylab.logging_setup.configure_logging() has run (main.py needs
+the data directory this module resolves before it can point the
+logging engine at it), so any warning logged here before that point
+falls back to Python's default "handler of last resort" (printed to
+stderr) rather than the rotating log file - still visible, just not
+persisted. In practice this only affects a malformed config.json,
+which is rare and already surfaced on the console either way.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "config.json"
 
@@ -114,8 +126,8 @@ def _validated_float(raw: dict, key: str, default: float) -> float:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
 
-    print(
-        f'[config] Ignoring invalid value for "{key}" in config.json '
+    logger.warning(
+        f'Ignoring invalid value for "{key}" in config.json '
         f"({value!r}), using the default ({default})."
     )
     return default
@@ -126,7 +138,7 @@ def load_config(data_dir: Path | str | None = None) -> Config:
     Loads the configuration, creating config.json with the defaults in
     the data directory if it doesn't exist yet. A malformed or
     partially-filled file never prevents startup - invalid or missing
-    keys just fall back to their default, with a warning printed for
+    keys just fall back to their default, with a warning logged for
     anything ignored.
 
     data_dir defaults to default_data_dir(); passing it explicitly is
@@ -150,10 +162,7 @@ def load_config(data_dir: Path | str | None = None) -> Config:
         if not isinstance(raw, dict):
             raise ValueError("top-level JSON value must be an object")
     except (OSError, ValueError, json.JSONDecodeError) as ex:
-        print(
-            f"[config] Could not read {config_path} ({ex}), "
-            "using defaults instead."
-        )
+        logger.warning(f"Could not read {config_path} ({ex}), using defaults instead.")
         return Config(data_dir=data_dir)
 
     return Config(
@@ -185,7 +194,4 @@ def _write_defaults(config_path: Path) -> None:
         # folder) is a minor inconvenience, not a reason to stop
         # startup - the defaults above still apply in memory either
         # way.
-        print(
-            f"[config] Could not create {config_path} ({ex}), "
-            "continuing with defaults."
-        )
+        logger.warning(f"Could not create {config_path} ({ex}), continuing with defaults.")

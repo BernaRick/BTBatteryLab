@@ -1,4 +1,5 @@
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from pathlib import Path
 from btbatterylab.collector.bluetooth_collector import BluetoothCollector
 from btbatterylab.monitoring.tail_monitor import JsonlTailMonitor
 from btbatterylab.storage.sqlite_storage import SqliteStorage
+
+logger = logging.getLogger(__name__)
 
 # Default minimum spacing between a PnP poll "woken up" by a connection
 # event and the next one, so that several classic devices connecting
@@ -171,7 +174,7 @@ class UnifiedCollector:
                     address, battery_percent, timestamp, source="ble"
                 )
 
-        self._print_state(address)
+        self._log_state(address)
 
         # Classic devices (BR/EDR, e.g. headsets without a BLE
         # interface) can't report battery from this channel: their
@@ -197,7 +200,7 @@ class UnifiedCollector:
             devices = self._collector.discover()
             readings = self._collector.read_battery_levels()
         except Exception as ex:
-            print(f"[UnifiedCollector] Error during PnP polling: {ex}")
+            logger.error(f"Error during PnP polling: {ex}")
             return False
 
         names_by_address = {
@@ -241,7 +244,7 @@ class UnifiedCollector:
                 updated_addresses.append(address)
 
         for address in updated_addresses:
-            self._print_state(address)
+            self._log_state(address)
 
         return True
 
@@ -339,7 +342,7 @@ class UnifiedCollector:
             state.battery_timestamp = timestamp
             state.battery_source = source
 
-    def _print_state(self, address: str) -> None:
+    def _log_state(self, address: str) -> None:
         with self._lock:
             state = self._states.get(address)
 
@@ -358,10 +361,8 @@ class UnifiedCollector:
         else:
             online = "?"
 
-        print(
-            f"[{datetime.now():%H:%M:%S}] "
-            f"{state.name or address} [{address}]: "
-            f"{online}, battery {battery}"
+        logger.info(
+            f"{state.name or address} [{address}]: {online}, battery {battery}"
         )
 
     # --- lifecycle ---
@@ -385,7 +386,7 @@ class UnifiedCollector:
         # for file"/"Following"), but the database isn't - without this
         # line, the only way to know where SqliteStorage is writing is
         # to read the code.
-        print(f"Database: {self._storage.db_path}")
+        logger.info(f"Database: {self._storage.db_path}")
 
         self._polling_thread = threading.Thread(
             target=self._polling_loop,

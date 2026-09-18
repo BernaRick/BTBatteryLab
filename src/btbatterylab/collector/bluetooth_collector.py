@@ -293,6 +293,11 @@ class BluetoothCollector:
 
 
 if __name__ == "__main__":
+    # Manual, human-run diagnostic entry point (python -m
+    # btbatterylab.collector.bluetooth_collector): its printed output
+    # *is* the thing being read, directly off the terminal, so it keeps
+    # using print() rather than the logging engine - same reasoning as
+    # the analytics/export CLI tools, see btbatterylab.logging_setup.
     collector = BluetoothCollector()
 
     devices = collector.discover()

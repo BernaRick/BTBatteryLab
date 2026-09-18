@@ -1,29 +1,28 @@
-import sys
+import logging
 
 from btbatterylab.collector.unified_collector import UnifiedCollector
 from btbatterylab.config import load_config
+from btbatterylab.logging_setup import configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    # When this process is started in the background by
-    # BluetoothWatcher.exe (standalone build, see build_exe.bat)
-    # instead of in an interactive console, stdout/stderr are no
-    # longer a terminal but a pipe: Python automatically switches from
-    # line-buffering to block-buffering, so print() output stays stuck
-    # in an internal buffer until it fills up or the process ends -
-    # with only a few lines per minute, effectively never. This is why
-    # the log ended up empty (or never even created), not because of a
-    # problem in the data collection logic. We always force
-    # line-buffering, so every printed line reaches whoever is reading
-    # stdout right away, whether that's a real console or
-    # BluetoothWatcher.exe's log file.
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
-
     config = load_config()
 
-    print(f"Data folder: {config.data_dir}")
-    print(f"Config file: {config.config_path}")
+    # Sets up the logging engine (see btbatterylab.logging_setup): a
+    # console handler plus a rotating file under
+    # <data_dir>/logs/btbatterylab.log. This also makes the old
+    # sys.stdout.reconfigure(line_buffering=True) workaround
+    # unnecessary - logging.StreamHandler flushes its stream after
+    # every record, regardless of whether stdout is a real console or
+    # a pipe (as when BluetoothWatcher.exe starts this process in the
+    # background and redirects its output to collector.log).
+    log_path = configure_logging(config.data_dir)
+
+    logger.info(f"Data folder: {config.data_dir}")
+    logger.info(f"Config file: {config.config_path}")
+    logger.info(f"Log file: {log_path}")
 
     collector = UnifiedCollector(
         jsonl_path=config.jsonl_path,

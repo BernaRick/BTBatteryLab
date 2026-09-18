@@ -1,7 +1,10 @@
+import logging
 import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class SqliteStorage:
@@ -23,7 +26,7 @@ class SqliteStorage:
     writes from two different threads (JSONL tail on the main thread,
     PnP polling on a background thread).
 
-    SQLite errors are caught and printed instead of crashing the
+    SQLite errors are caught and logged instead of crashing the
     collector: persistence is a useful side-effect but must never
     interrupt live monitoring.
     """
@@ -106,7 +109,7 @@ class SqliteStorage:
                     {"address": address, "name": name, "ts": ts},
                 )
         except sqlite3.Error as ex:
-            print(f"[SqliteStorage] Error in record_device_seen: {ex}")
+            logger.error(f"Error in record_device_seen: {ex}")
 
     def record_battery(
         self,
@@ -136,7 +139,7 @@ class SqliteStorage:
                     (address, ts, battery_percent, source),
                 )
         except sqlite3.Error as ex:
-            print(f"[SqliteStorage] Error in record_battery: {ex}")
+            logger.error(f"Error in record_battery: {ex}")
 
     def close(self) -> None:
         with self._lock:

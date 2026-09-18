@@ -24,8 +24,8 @@ Create a functional replacement for manual PowerShell battery logging.
 - Simplified startup (`run.bat`) ✅
 - Standalone `.exe` packaging (single double-click, no console windows) ✅
 - Configuration system ✅
-- CSV export
-- Logging engine
+- CSV export ✅
+- Logging engine ✅
 
 ### Step 2.1 - BLE Presence Monitoring ✅
 
@@ -186,11 +186,93 @@ non-default location isn't supported yet (nothing asked for it) -
 `config.json` only tunes the numeric knobs above, and always lives
 inside the default data directory.
 
+### Step 2.6 - CSV Export ✅
+
+Objective:
+
+Give a way to get the raw battery history out of SQLite into a
+format usable by spreadsheets or other tools, without writing SQL.
+
+Implemented:
+
+- New package `btbatterylab.export`: `csv_export.export_battery_log()`
+  does the work (joins `battery_log` with `devices`, filters by time
+  window and an optional device name/address substring, writes one
+  CSV row per raw reading - not the "freshest wins" merged view used
+  by `UnifiedCollector`, the full history), `__main__.py` is the CLI
+  (`python -m btbatterylab.export`).
+- Same `--days`/`--device`/`--db` flags as `btbatterylab.analytics`
+  for consistency, plus `--out` to choose the destination file.
+  Default destination: `<data dir>/exports/battery-log-<timestamp>.csv`.
+- Always writes a valid CSV (header row at minimum), even when the
+  filters match zero readings, so a scripted caller never has to
+  special-case an empty result.
+- Verified against a synthetic SQLite database (pure Python/stdlib,
+  no Windows dependency, so - like `config.py` and the analytics
+  module - this could be run and checked directly without Patrick's
+  hardware): row counts for the full window, a narrowed window, name
+  and address substring filters, and a non-matching filter all
+  verified correct; the actual CLI (`python -m btbatterylab.export`)
+  exercised end-to-end with both an explicit `--out` and the default
+  path.
+
+### Step 2.7 - Logging Engine ✅
+
+Objective:
+
+Replace the collector's ad hoc `print()`-based console output (and
+the `sys.stdout.reconfigure(line_buffering=True)` workaround it
+needed to reach the standalone build's redirected `collector.log`
+promptly) with real structured logging: levels, timestamps, and a
+log file that doesn't grow without bound.
+
+Implemented:
+
+- New module `btbatterylab.logging_setup`: `configure_logging(data_dir)`
+  installs a console handler and a `RotatingFileHandler` (5 MB per
+  file, 3 backups kept) writing to `<data_dir>/logs/btbatterylab.log`,
+  both using the same `<time> <LEVEL> [<module>] <message>` format.
+  Idempotent - a second call is a no-op and returns the path already
+  in use, rather than silently claiming to log somewhere it isn't.
+- Every `print()` in the long-running service path (`main.py`,
+  `UnifiedCollector`, `SqliteStorage`, `config.py`,
+  `JsonlTailMonitor`) replaced with a `logging.getLogger(__name__)`
+  call at the appropriate level (`info` for normal state/lifecycle
+  messages, `warning` for a config file falling back to defaults,
+  `error` - with a traceback for the JSONL line-processing case -
+  for real failures).
+- `main.py`'s old `sys.stdout.reconfigure(line_buffering=True)`
+  workaround is no longer needed and was removed:
+  `logging.StreamHandler` flushes its stream after every record
+  regardless of whether stdout is a real console or the pipe
+  `BluetoothWatcher.exe` redirects to `collector.log` in the
+  standalone build, which is exactly the case that workaround
+  existed for in the first place.
+- Deliberately **not** applied to the one-shot CLI report tools
+  (`btbatterylab.analytics`, `btbatterylab.export`, and the manual
+  diagnostic entry point in `bluetooth_collector.py`): their printed
+  output is the actual product (a report, a CSV path, a device
+  listing), not a diagnostic log, so adding timestamps/levels there
+  would just be noise for something read directly off the terminal.
+- Verified in this session (pure Python/stdlib, no Windows
+  dependency): handler installation and idempotency, INFO/WARNING/
+  ERROR records reaching the rotating file with the right format,
+  and `UnifiedCollector`'s event handling still working end-to-end
+  through the renamed `_log_state` method with no exceptions.
+
+Not covered by this step: the log level isn't yet configurable via
+`config.json` (always `INFO`) - nothing asked for it yet, and it can
+be added the same way the other tuning knobs were if it's ever
+needed.
+
 ### Status
 
-🟡 In Progress — presence, unified battery collection, storage,
-standalone `.exe` packaging, and the configuration system are done and
-verified; CSV export and the logging engine are still open.
+🟢 Feature-complete for v0.1 Alpha — presence, unified battery
+collection, storage, standalone `.exe` packaging, the configuration
+system, CSV export, and the logging engine are all done and
+implemented; CSV export and the logging engine still need a
+real-hardware verification pass (same as every other step in this
+phase) before the v0.1 Alpha release issue can be closed.
 
 ---
 

@@ -1,7 +1,10 @@
+import logging
 import time
 from pathlib import Path
 from threading import Event
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class JsonlConsumer(Protocol):
@@ -44,7 +47,7 @@ class JsonlTailMonitor:
         Starts tailing the file.
         """
 
-        print(f"Waiting for file: {self.path}")
+        logger.info(f"Waiting for file: {self.path}")
 
         while not self.path.exists():
             if self._stop_event.is_set():
@@ -52,7 +55,7 @@ class JsonlTailMonitor:
 
             time.sleep(self.poll_interval)
 
-        print(f"Following: {self.path}")
+        logger.info(f"Following: {self.path}")
 
         with self.path.open(
             mode="r",
@@ -73,8 +76,5 @@ class JsonlTailMonitor:
                 try:
                     self.consumer.process_json_line(line)
 
-                except Exception as ex:
-                    print(
-                        f"[ERROR] "
-                        f"Unable to process line: {ex}"
-                    )
+                except Exception:
+                    logger.error("Unable to process line", exc_info=True)

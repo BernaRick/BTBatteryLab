@@ -276,7 +276,7 @@ again. See [config.example.json](./config.example.json) for the full
 list of keys and what each one does (`poll_interval_seconds`,
 `min_poll_spacing_seconds`, `pnp_timeout_seconds`). A missing or
 invalid key is never fatal — it just falls back to its default, with a
-warning printed to the console.
+warning logged (see [Logging](#logging) below).
 
 ### Battery analytics: `python -m btbatterylab.analytics`
 
@@ -289,6 +289,22 @@ Once some history has been collected into `btbatterylab.db` (see [Historical Dat
 for a per-device report over the last 30 days: reading count, min/max/average battery percent, drain rate (%/hour, from the discharge runs found in `battery_log`), an estimated remaining runtime projected from that rate, and any detected charge sessions. Useful flags: `--days N` to change the time window, `--device "name or address"` to filter to one device, and `--db path\to\btbatterylab.db` to point at a database anywhere other than the default data folder.
 
 This is a plain projection from past history, not a live countdown — it has no idea whether a device is online or currently charging (that lives only in `UnifiedCollector`'s in-memory state while it's running).
+
+### CSV export: `python -m btbatterylab.export`
+
+Exports the raw `battery_log` history — every reading recorded from either channel (`ble`/`pnp`), not just the one that "wins" in the live view — to a CSV file, for spreadsheets or any tool outside BTBatteryLab:
+
+```powershell
+.venv\Scripts\python.exe -m btbatterylab.export
+```
+
+By default this writes `battery-log-<timestamp>.csv` into an `exports` subfolder of your data folder, covering the last 30 days. Same `--days N` and `--device "name or address"` filters as the analytics CLI, plus `--out path\to\file.csv` to choose the destination yourself and `--db` to point at a different database. Each row is `address,device_name,timestamp,battery_percent,source`.
+
+### Logging
+
+The collector (`main.py`) writes structured, leveled log records (INFO/WARNING/ERROR with a timestamp) to two places: the console, same as before, and a rotating log file at `Documents\BTBatteryLabData\logs\btbatterylab.log` (capped at 5 MB per file, keeping the 3 most recent — it will never grow without bound the way the old standalone-build `collector.log` could). This replaced the previous ad hoc `print()`-based output and the `line_buffering` workaround it needed to reach `collector.log` promptly when the process is started in the background (see [Standalone build](#standalone-build-build_exebat)) — a normal log handler flushes every record on its own.
+
+The one-shot CLI report tools (`btbatterylab.analytics`, `btbatterylab.export`) are unaffected — their printed output is the actual report/result, not a diagnostic log, so they keep using plain `print()`.
 
 ---
 
@@ -304,8 +320,8 @@ This is a plain projection from past history, not a live countdown — it has no
 - SQLite database ✅
 - Simplified startup (`run.bat`) ✅
 - Standalone `.exe` packaging (single double-click, no console windows) ✅
-- CSV export
-- Logging engine
+- CSV export ✅
+- Logging engine ✅
 
 ### v0.2
 
