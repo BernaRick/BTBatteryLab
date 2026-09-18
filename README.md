@@ -313,7 +313,17 @@ The one-shot CLI report tools (`btbatterylab.analytics`, `btbatterylab.export`) 
 
 The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging, SQLite storage, battery analytics (including regression tests for the two real-data drain-rate bugs described in the [roadmap](docs/roadmap.md)), CSV export, the unified collector's event-handling logic, and the JSONL tail monitor. `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run`, so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required.
 
-Run it from the repository root:
+This is also the first thing to run if something isn't working and you're not sure why — a clean pass is a quick way to rule out a broken install before digging further.
+
+**Easiest way to run it**: double-click `test.bat` at the repository root. It uses a friendlier console runner (`tests/run_tests.py`) than raw `unittest`: expected output from tests that deliberately trigger an error or warning path (there are a few, on purpose, to check those paths are handled correctly) is hidden unless that specific test actually fails, and the result is color-coded (green for pass, red for fail) with a clear one-line summary at the end. Colors are automatically skipped when the output isn't a real terminal, so redirecting it to a file (e.g. to attach it when reporting a problem) always produces plain, readable text.
+
+Equivalent from a terminal, from the repository root:
+
+```powershell
+.venv\Scripts\python.exe tests\run_tests.py
+```
+
+The plain `unittest` invocation still works if you'd rather have the raw output (e.g. for scripting):
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests

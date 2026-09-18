@@ -117,7 +117,7 @@ Whenever new functionality is added:
 
 Before submitting a pull request:
 
-- Run the automated test suite (`.venv\Scripts\python.exe -m unittest discover -s tests`) and make sure it passes
+- Run the automated test suite (`test.bat`, or `.venv\Scripts\python.exe tests\run_tests.py`) and make sure it passes
 - Add or update tests for any Python change under `src/btbatterylab/` when practical
 - Verify the application runs correctly
 - Verify existing functionality is not broken
