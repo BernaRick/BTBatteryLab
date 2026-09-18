@@ -61,9 +61,32 @@ def _insert_readings(
         )
 
 
-class NoDataTests(unittest.TestCase):
-    def test_no_readings_reports_no_data(self) -> None:
+class _DatabaseTestCase(unittest.TestCase):
+    """
+    Shared base for tests that need a real (in-memory) SQLite
+    connection: registers the connection to be closed after the test
+    instead of relying on it eventually being garbage collected.
+
+    A ":memory:" database doesn't leak in the sense of holding a file
+    open, but an un-closed sqlite3.Connection is still finalized by
+    CPython's garbage collector on its own schedule rather than
+    deterministically at the end of the test - on a real run against
+    the actual repo (Windows, not this suite's sandbox environment)
+    that surfaced as ResourceWarnings, misleadingly attributed to
+    whatever code happened to be executing when the collector finally
+    ran (a later, unrelated test). Closing explicitly avoids relying
+    on GC timing at all.
+    """
+
+    def make_db(self) -> sqlite3.Connection:
         connection = _make_db()
+        self.addCleanup(connection.close)
+        return connection
+
+
+class NoDataTests(_DatabaseTestCase):
+    def test_no_readings_reports_no_data(self) -> None:
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, ADDRESS, NAME, now)
 
@@ -77,9 +100,9 @@ class NoDataTests(unittest.TestCase):
         self.assertIsNone(report.last_percent)
 
 
-class DrainRateAndRuntimeTests(unittest.TestCase):
+class DrainRateAndRuntimeTests(_DatabaseTestCase):
     def test_clean_discharge_produces_expected_drain_rate_and_runtime(self) -> None:
-        connection = _make_db()
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, ADDRESS, NAME, now)
 
@@ -105,7 +128,7 @@ class DrainRateAndRuntimeTests(unittest.TestCase):
         )
 
     def test_charge_session_is_detected_separately_from_discharge(self) -> None:
-        connection = _make_db()
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, ADDRESS, NAME, now)
 
@@ -129,7 +152,7 @@ class DrainRateAndRuntimeTests(unittest.TestCase):
         self.assertEqual(charge.end_time, now - timedelta(hours=1))
 
 
-class ReliabilityFilterRegressionTests(unittest.TestCase):
+class ReliabilityFilterRegressionTests(_DatabaseTestCase):
     """
     Locks in the two real-data fixes from Step 3.1 of the roadmap.
     """
@@ -138,7 +161,7 @@ class ReliabilityFilterRegressionTests(unittest.TestCase):
         # Two readings ~2 minutes apart implying ~300%/h - shorter
         # than MIN_SESSION_DURATION_HOURS (10 minutes), must not
         # affect the drain rate or show up as a session at all.
-        connection = _make_db()
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, ADDRESS, NAME, now)
 
@@ -158,7 +181,7 @@ class ReliabilityFilterRegressionTests(unittest.TestCase):
         # drop from 90% to 50% implies ~48%/h, above
         # MAX_PLAUSIBLE_DISCHARGE_RATE_PERCENT_PER_HOUR (40%/h) - this
         # is the MX Master 2S regression case from the roadmap.
-        connection = _make_db()
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, ADDRESS, NAME, now)
 
@@ -177,7 +200,7 @@ class ReliabilityFilterRegressionTests(unittest.TestCase):
         # A quick-charging earbud case going from 0% to 100% in 20
         # minutes (300%/h) must still be reported - the discharge-only
         # plausibility cap must not reject fast charge sessions.
-        connection = _make_db()
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, ADDRESS, NAME, now)
 
@@ -196,7 +219,7 @@ class ReliabilityFilterRegressionTests(unittest.TestCase):
         # Sanity check that the filters aren't so strict they drop a
         # perfectly normal session: 3 hours, 15 points -> 5%/h, well
         # under the 40%/h cap and well over the 10-minute floor.
-        connection = _make_db()
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, ADDRESS, NAME, now)
 
@@ -213,9 +236,9 @@ class ReliabilityFilterRegressionTests(unittest.TestCase):
         self.assertEqual(report.discharge_session_count, 1)
 
 
-class DeviceFilterTests(unittest.TestCase):
+class DeviceFilterTests(_DatabaseTestCase):
     def test_build_all_reports_filters_by_name_and_address_substring(self) -> None:
-        connection = _make_db()
+        connection = self.make_db()
         now = datetime.now()
         _insert_device(connection, "AA:BB:CC:DD:EE:01", "OPPO Enco Air2", now)
         _insert_device(connection, "AA:BB:CC:DD:EE:02", "MX Master 2S", now)
