@@ -370,6 +370,7 @@ manual verification alone going into v0.2.
 - Discharge session detection ✅
 - Daily statistics
 - Presence-aware analytics
+- `device_type`/`vendor` identification on `Device` (GitHub issue #2)
 
 ### Step 3.1 - Battery Analytics over `battery_log` ✅
 
@@ -404,11 +405,40 @@ Implemented:
 Not yet implemented: daily statistics and presence-aware analytics
 (cross-referencing drain rate against online/offline periods).
 
+### Step 3.2 - Device Type & Vendor Identification
+
+Objective:
+
+Populate the `device_type`/`vendor` fields on the `Device` model,
+which have existed since Step 2.3 but are never actually filled in
+(GitHub issue #2) — currently every device shows up without a type
+or manufacturer, which limits how useful a future dashboard's
+device list can be.
+
+Planned approach (decided 2026-09-18, not started):
+
+- **Vendor**: try PnP first — extend `discover()`'s existing
+  PowerShell query (Step 2.1/2.2) to also read
+  `DEVPKEY_Device_Manufacturer`, the same pattern already used for
+  the battery properties. If PnP can't resolve a vendor for a given
+  device, store an explicit placeholder (e.g. `"Could not identify
+  vendor"`) rather than `null` or falling back to an OUI/MAC lookup
+  table.
+- **device_type**: same PnP-first approach, via the PnP `Class`
+  property, reusing the existing multi-node merge pattern from
+  `read_battery_levels()`.
+- Before writing the final logic: one exploratory pass with
+  `tools/property_explorer.py` against Patrick's real 5 reference
+  devices, to see what PnP actually reports for each, before
+  committing to the exact parsing/fallback rules.
+- Scope estimate: comparable to the configuration system (Step 2.5).
+
 ### Status
 
 🟡 In Progress — drain rate, runtime estimation, and charge/discharge
 session detection are implemented as a CLI report over `battery_log`;
-daily statistics and presence-aware analytics are still open.
+daily statistics, presence-aware analytics, and `device_type`/`vendor`
+identification (approach decided, not started) are still open.
 
 ---
 
