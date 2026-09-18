@@ -93,26 +93,18 @@ DeviceState (in-memory) + SqliteStorage
 `BluetoothWatcher` lives in this same repository under [`BluetoothWatcher/`](../BluetoothWatcher) — it used to be a separate repo, but was folded in (with its full commit history) so there is a single project to build and run. See [Getting Started](../README.md#getting-started) in the root README for how to run it.
 
 An earlier, BLE-only prototype (`monitoring/ble_presence_monitor.py`,
-`BlePresenceMonitor` + `DeviceStatus`) is still in the tree but is no
-longer wired into `main.py` — it's been superseded by
-`UnifiedCollector`, which folds presence tracking and battery
-collection (both channels) into one component. See
-[Collector](#collector) below.
+`BlePresenceMonitor` + `DeviceStatus`) existed at this stage but was
+never wired into `main.py` — it was superseded by `UnifiedCollector`,
+which folds presence tracking and battery collection (both channels)
+into one component, and was removed as dead code during the v0.1
+Alpha cleanup (2026-09-18). See [Collector](#collector) below for the
+actual implementation.
 
 Device state mapping:
 
 ```text
 Connected    → online=True
 Disconnected → online=False
-```
-
-Output:
-
-```python
-DeviceStatus(
-    online=True,
-    last_change=datetime(...)
-)
 ```
 
 ---
@@ -323,7 +315,7 @@ ConnectionStatusChanged
         ↓
 JSONL Event
         ↓
-DeviceStatus Update
+DeviceState Update
 ```
 
 ---

@@ -70,7 +70,10 @@ DeviceStatus
 > (BR/EDR) devices too, and its implementation was folded into
 > `UnifiedCollector` together with battery collection — see
 > **Step 2.2** below, which replaces the original "Battery Collection
-> Gating" plan with what was actually built.
+> Gating" plan with what was actually built. The `DeviceStatus`
+> model and `BlePresenceMonitor` listed above were never wired into
+> `main.py` and were removed as dead code during the v0.1 Alpha
+> cleanup (2026-09-18).
 
 ### Step 2.2 - Unified Battery Collection ✅
 

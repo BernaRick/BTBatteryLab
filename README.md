@@ -204,10 +204,13 @@ BluetoothWatcher (C#, ./BluetoothWatcher)
 ble-events.jsonl
         |
         v
-BTBatteryLab (Python)
+JsonlTailMonitor
         |
         v
-DeviceStatus
+UnifiedCollector (_handle_ble_event)
+        |
+        v
+DeviceState (in-memory) + SqliteStorage
 ```
 
 Device state mapping:
