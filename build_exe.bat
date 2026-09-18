@@ -132,9 +132,10 @@ echo Done. Executable ready at:
 echo     %DIST%\BluetoothWatcher.exe
 echo.
 echo Just double-click BluetoothWatcher.exe: it also starts the
-echo Python collector in the background (log in
-echo Documents\BTBatteryLabData\collector.log), without opening a
-echo second console window.
+echo Python collector in the background, without opening a second
+echo console window. Its log output goes to two places:
+echo     Documents\BTBatteryLabData\collector.log          (raw console output)
+echo     Documents\BTBatteryLabData\logs\btbatterylab.log  (structured, leveled, rotating)
 echo.
 echo The data folder (Documents\BTBatteryLabData) and its config.json
 echo are resolved automatically for whichever Windows account runs
