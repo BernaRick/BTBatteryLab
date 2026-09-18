@@ -315,7 +315,7 @@ The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`), bu
 
 This is also the first thing to run if something isn't working and you're not sure why — a clean pass is a quick way to rule out a broken install before digging further.
 
-**Easiest way to run it**: double-click `test.bat` at the repository root. It uses a friendlier console runner (`tests/run_tests.py`) than raw `unittest`: expected output from tests that deliberately trigger an error or warning path (there are a few, on purpose, to check those paths are handled correctly) is hidden unless that specific test actually fails, and the result is color-coded (green for pass, red for fail) with a clear one-line summary at the end. Colors are automatically skipped when the output isn't a real terminal, so redirecting it to a file (e.g. to attach it when reporting a problem) always produces plain, readable text.
+**Easiest way to run it**: double-click `test.bat` at the repository root. It uses a friendlier console runner (`tests/run_tests.py`) than raw `unittest`: expected output from tests that deliberately trigger an error or warning path (there are a few, on purpose, to check those paths are handled correctly) is hidden unless that specific test actually fails, and the result is color-coded (green for pass, red for fail). At the end it prints a breakdown by area (configuration, battery analytics, CSV export, and so on) so you can see at a glance which part - if any - has a problem, followed by a one-line overall summary. Colors are automatically skipped when the output isn't a real terminal, so redirecting it to a file (e.g. to attach it when reporting a problem) always produces plain, readable text.
 
 Equivalent from a terminal, from the repository root:
 
