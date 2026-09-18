@@ -309,6 +309,18 @@ The collector (`main.py`) writes structured, leveled log records (INFO/WARNING/E
 
 The one-shot CLI report tools (`btbatterylab.analytics`, `btbatterylab.export`) are unaffected — their printed output is the actual report/result, not a diagnostic log, so they keep using plain `print()`.
 
+### Automated tests
+
+The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging, SQLite storage, battery analytics (including regression tests for the two real-data drain-rate bugs described in the [roadmap](docs/roadmap.md)), CSV export, the unified collector's event-handling logic, and the JSONL tail monitor. `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run`, so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required.
+
+Run it from the repository root:
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+(`BluetoothWatcher`, the C# BLE presence layer, has no automated tests yet.)
+
 ---
 
 ## Project Roadmap

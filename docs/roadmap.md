@@ -268,14 +268,74 @@ Not covered by this step: the log level isn't yet configurable via
 be added the same way the other tuning knobs were if it's ever
 needed.
 
+### Step 2.8 - Automated Test Suite ✅
+
+Objective:
+
+Before moving past v0.1 Alpha, get an automated regression net around
+the Python side, so the working base doesn't have to rely solely on
+manual real-hardware checks going forward.
+
+Implemented:
+
+- `tests/`, using only Python's standard `unittest` module (no
+  third-party test runner needed - works the same on this repo's
+  Windows machine and anywhere else): 98 tests across 7 files, run
+  with `python -m unittest discover -s tests` from the repository
+  root.
+- `test_config.py`, `test_logging_setup.py`, `test_sqlite_storage.py`:
+  config loading/fallback behavior, `configure_logging()`
+  idempotency (including a regression test for a path-caching bug
+  found while writing these tests - see below), and `SqliteStorage`'s
+  insert/upsert/error-handling behavior.
+- `test_analytics.py`: drain rate, runtime estimation, and charge
+  session detection, including regression tests that directly encode
+  the two real-data reliability-filter bugs from Step 3.1
+  (`MIN_SESSION_DURATION_HOURS`, `MAX_PLAUSIBLE_DISCHARGE_RATE_PERCENT_PER_HOUR`)
+  so a future change can't silently weaken those constants without a
+  test failing.
+- `test_export.py`: CSV export windowing, device filtering, and
+  output formatting.
+- `test_bluetooth_collector.py`: `discover()`/`read_battery_levels()`
+  parsing and multi-node merge logic, by mocking `subprocess.run`
+  instead of requiring a real Windows machine - this closes a real
+  gap, since that logic previously had zero automated coverage.
+- `test_unified_collector.py`: the pure-logic helpers
+  (`_is_generic_name`, `_parse_timestamp`, `_maybe_update_name`,
+  `_maybe_update_battery`) plus an integration-style test of
+  `process_json_line`/`_handle_ble_event` against a real (tmp-path)
+  `SqliteStorage`.
+- `test_tail_monitor.py`: `JsonlTailMonitor` followed in a background
+  thread against a real temp file - waiting for the file to appear,
+  only-new-lines semantics, ordering, a consumer exception not
+  killing the follow loop, and clean `stop()` behavior.
+- Caught one real bug along the way: an earlier version of
+  `configure_logging()` computed its returned path from the
+  *current* call's `data_dir` even when short-circuiting on a
+  boolean "already configured" flag, so a second call from a
+  different location would report logging was happening there when
+  it never actually moved. Fixed by caching the real resolved path
+  instead of a boolean flag; the fix shipped with a permanent
+  regression test.
+- README/CONTRIBUTING updated to document the suite and how to run
+  it; CONTRIBUTING's "no automated test suite yet" note removed.
+
+Not covered by this step: `BluetoothWatcher` (C#) has no automated
+tests yet; the threaded `UnifiedCollector.start()`/`_polling_loop`/
+`_wait_for_next_poll` methods are exercised manually rather than
+under `unittest`, since they're timing-dependent enough that a
+comprehensive automated version would trade a fast, reliable suite
+for a slow, potentially flaky one.
+
 ### Status
 
-🟢 Feature-complete for v0.1 Alpha — presence, unified battery
-collection, storage, standalone `.exe` packaging, the configuration
-system, CSV export, and the logging engine are all done and
-implemented; CSV export and the logging engine still need a
-real-hardware verification pass (same as every other step in this
-phase) before the v0.1 Alpha release issue can be closed.
+🟢 v0.1 Alpha is feature-complete and shipped: presence, unified
+battery collection, storage, standalone `.exe` packaging, the
+configuration system, CSV export, and the logging engine are all
+implemented and were verified against real hardware; the release
+issue is closed. An automated test suite (98 tests, `unittest`-based)
+now covers the pure-Python side, so the working base doesn't rely on
+manual verification alone going into v0.2.
 
 ---
 

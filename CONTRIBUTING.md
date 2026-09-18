@@ -30,9 +30,13 @@ layer).
 
 See the [Getting Started](./README.md#getting-started) section of the
 README for prerequisites and how to run both parts, either with
-`run.bat` or manually. There is no automated test suite yet, so please
-test your changes against a real run (ideally with real Bluetooth
-hardware) before opening a pull request.
+`run.bat` or manually.
+
+The Python side has an automated test suite under `tests/` (see the
+[Automated tests](./README.md#automated-tests) section of the README
+for what it covers and how to run it). `BluetoothWatcher` (C#) has no
+automated tests yet, so please test your changes against a real run
+(ideally with real Bluetooth hardware) before opening a pull request.
 
 ---
 
@@ -113,6 +117,8 @@ Whenever new functionality is added:
 
 Before submitting a pull request:
 
+- Run the automated test suite (`.venv\Scripts\python.exe -m unittest discover -s tests`) and make sure it passes
+- Add or update tests for any Python change under `src/btbatterylab/` when practical
 - Verify the application runs correctly
 - Verify existing functionality is not broken
 - Test with real Bluetooth devices whenever possible
