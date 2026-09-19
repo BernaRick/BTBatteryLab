@@ -10,10 +10,12 @@ process via `python -m unittest discover`).
 """
 
 import logging
+import logging.handlers
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import btbatterylab.logging_setup as logging_setup
 from btbatterylab.logging_setup import LOG_FILENAME, LOG_SUBDIR, configure_logging
@@ -121,6 +123,34 @@ class ConfigureLoggingTests(unittest.TestCase):
         handler_count_after_second = len(self._root_logger.handlers)
 
         self.assertEqual(handler_count_after_first, handler_count_after_second)
+
+    def test_no_console_handler_or_crash_when_stderr_is_none(self) -> None:
+        """
+        Regression test for running under pythonw.exe (see run.bat,
+        which now starts the collector that way): sys.stderr is None
+        there, and logging.StreamHandler() defaults to sys.stderr, so
+        configure_logging() must skip adding a console handler
+        instead of installing one backed by None - both the crash
+        this would otherwise cause on the first log call and file
+        logging still working are checked here.
+        """
+
+        with patch.object(logging_setup.sys, "stderr", None):
+            log_path = configure_logging(self.data_dir)
+
+            logger = logging.getLogger("btbatterylab.some.headless.module")
+            logger.info("hello from a headless process")
+
+        for handler in self._root_logger.handlers:
+            handler.flush()
+
+        self.assertEqual(len(self._root_logger.handlers), 1)
+        self.assertIsInstance(
+            self._root_logger.handlers[0], logging.handlers.RotatingFileHandler
+        )
+        self.assertIn(
+            "hello from a headless process", log_path.read_text(encoding="utf-8")
+        )
 
 
 if __name__ == "__main__":

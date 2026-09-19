@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import sys
 from pathlib import Path
 
 LOG_FILENAME = "btbatterylab.log"
@@ -55,9 +56,12 @@ _configured_path: Path | None = None
 
 def configure_logging(data_dir: Path | str, level: int = logging.INFO) -> Path:
     """
-    Configures the root logger with a console handler (stdout) and a
-    rotating file handler under <data_dir>/logs/btbatterylab.log.
-    Returns the resolved log file path.
+    Configures the root logger with a rotating file handler under
+    <data_dir>/logs/btbatterylab.log, plus a console handler too -
+    unless there is no console to write to (see the sys.stderr check
+    below, added when run.bat/pythonw.exe made that a real case
+    instead of a hypothetical one). Returns the resolved log file
+    path.
 
     Safe to call more than once (e.g. from tests) - only the first
     call actually installs the handlers. A later call with a
@@ -79,9 +83,6 @@ def configure_logging(data_dir: Path | str, level: int = logging.INFO) -> Path:
 
     formatter = logging.Formatter(fmt=_FORMAT, datefmt=_DATE_FORMAT)
 
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
     file_handler = logging.handlers.RotatingFileHandler(
         log_path,
         maxBytes=MAX_LOG_BYTES,
@@ -92,8 +93,21 @@ def configure_logging(data_dir: Path | str, level: int = logging.INFO) -> Path:
 
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
-    root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
+
+    # sys.stderr is None when this runs under pythonw.exe (run.bat
+    # now starts the collector that way - see its own comments - so
+    # there is never a console to write to): logging.StreamHandler()
+    # defaults to sys.stderr, and adding one backed by None would
+    # make every log call raise inside logging's own error handling
+    # instead of just logging quietly to the file. Skipping it here
+    # is a no-op for anyone still running python.exe in a real
+    # terminal (sys.stderr is a real stream there, so the console
+    # handler is still added) - only the headless case changes.
+    if sys.stderr is not None:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
 
     _configured_path = log_path
 

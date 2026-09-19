@@ -431,24 +431,96 @@ free of any `nicegui` import so they stay unit-testable the same way as
   observed that device this run - "Unknown" otherwise
   (`tests/test_dashboard_data.py`, 16 tests).
 
-**Not yet verified on a real machine** - same limitation as the
-skeleton originally had: this session's sandboxes have no PyPI access,
-so `app.py`'s NiceGUI-specific code (which imports `nicegui`) could
-only be checked with `ast.parse` and written against NiceGUI's
-documented API, never actually run. No new dependency is needed
-(`ui.echart` ships with `nicegui` itself), so this is just a
-`git pull` + re-run away from being checked - Patrick still needs to
-confirm the dashboard actually renders and updates correctly.
+**Verified on a real machine (2026-09-19, Patrick)**: dashboard renders
+and updates correctly - "per una prima prova la UI va bene" (good for a
+first try). Patrick then used it for a while before asking for the
+round of polish described next.
 
-Still open: how this fits the existing `BluetoothWatcher.exe` standalone
-packaging (Step 2.4) - a NiceGUI app opens a browser tab, which changes
-what "no console windows" means for that build.
+### UI restyle and Analysis card (2026-09-19)
+
+After testing the dashboard for a while, Patrick asked for three things:
+a friendlier, more styled UI that makes information - especially the
+analysis data - stand out; both terminal windows started by `run.bat`
+hidden completely (not minimized); and a manual page-refresh button.
+Two follow-up choices, both via explicit question to Patrick:
+**stop mechanism** - an Exit button in the dashboard stops the Python
+collector and closes its process, with a separate `stop.bat` for
+`BluetoothWatcher.exe` (chosen over minimizing windows and keeping
+Ctrl+C/ENTER); **scope** - both bringing the existing
+`btbatterylab.analytics` calculations into the dashboard and a general
+visual restyle (chosen over doing just one).
+
+**Analysis card implemented**: `btbatterylab.ui.dashboard_data.
+analysis_summary()` formats a `btbatterylab.analytics.battery_analytics.
+DeviceReport` (drain rate, estimated runtime, average battery, battery
+range, reading count, charge/discharge session counts) for four stat
+tiles next to the chart, reusing the existing analytics module rather
+than duplicating any calculation (`tests/test_dashboard_data.py`, 18
+new tests: battery-level banding, per-row badge color, and
+`analysis_summary()` formatting - 34 tests total in that file now).
+
+**Visual restyle implemented**: the device table's battery and status
+columns render as colored Quasar badges (green/amber/red/grey, via
+NiceGUI's `add_slot()` + `q-badge`) instead of plain text - good at
+50% or above, warning 20-49%, critical below 20%, matching the existing
+"positive"/"warning"/"negative"/"grey" status-badge idiom already used
+by the live control panel rather than introducing a second color
+system. The battery-history chart gained matching shaded threshold
+bands (ECharts `markArea`) at the same 20%/50% cutoffs. The header
+gained a manual refresh icon and an Exit icon (confirmation dialog,
+then stops the collector and closes the app), and the page got a
+max-width centered layout. Followed the `dataviz` skill's principles
+(status colors reserved and never color-alone, single-hue sequential
+encoding, hover tooltips) adapted to NiceGUI's Quasar-based styling
+rather than the skill's raw CSS-variable machinery, which targets
+hand-built HTML/SVG.
+
+**Windowless `run.bat`/`BluetoothWatcher.exe` implemented**: the Python
+collector now launches via `pythonw.exe` (the windowless CPython
+variant) instead of `python.exe`, and `BluetoothWatcher.csproj`'s
+`OutputType` changed from `Exe` to `WinExe`, so neither process ever
+allocates a console window, in `run.bat` or in the standalone build.
+This forced two follow-on changes: `BluetoothWatcher`'s stop mechanism
+(`Console.ReadLine()`, blocking for ENTER) doesn't work without a
+console, so it's now `Task.Delay(Timeout.Infinite)` plus external
+termination via `stop.bat` (`taskkill /F /IM BluetoothWatcher.exe /T`,
+which also takes down the embedded Python collector); and
+`BluetoothWatcher`'s own console output now redirects to
+`Documents\BTBatteryLabData\logs\watcher.log` instead of a terminal.
+Also fixed a real bug this surfaced: `logging_setup.py`'s console
+handler defaulted to `sys.stderr`, which is `None` under `pythonw.exe`
+and would have crashed on the first log line - now guarded and covered
+by a regression test. `run.bat` itself now does a synchronous
+`dotnet build` followed by launching the built `.exe` directly, since
+`dotnet run`'s own console (belonging to `dotnet.exe`, not the target
+project) isn't affected by `OutputType` and would otherwise still show
+a window in dev mode.
+
+This also resolves the packaging question left open above: since both
+processes are windowless regardless of how they're launched, the
+standalone `.exe` build needs no special-case handling for "no console
+windows" any more - `build_exe.bat` now generates a matching `stop.bat`
+next to `BluetoothWatcher.exe` in the dist folder.
+
+**Not yet verified on a real machine**: this round's C# changes
+(`BluetoothWatcher.csproj`, `Program.cs`) could not be compiled - no
+`dotnet` SDK available in this session - and were checked only by
+careful manual review; the NiceGUI changes (`app.py`,
+`dashboard_data.py`) could only be checked with `ast.parse`, the same
+limitation as before. If the windowless behavior causes problems, the
+rollback is straightforward: revert `BluetoothWatcher.csproj`'s
+`OutputType` to `Exe` and `run.bat`'s Python launch back to
+`python.exe`. Patrick needs to `git pull`, rebuild, and verify both the
+restyled dashboard (badges, chart bands, Analysis card, refresh/exit
+icons) and the new windowless `run.bat`/`stop.bat` flow before this is
+considered done.
 
 ### Status
 
-🟡 In progress - live collector control panel implemented and verified
-on real hardware; historical dashboard implemented, pending Patrick's
-real-machine verification
+🟡 In progress - live collector control panel and historical dashboard
+implemented and verified on real hardware; Analysis card, visual
+restyle, and windowless `run.bat`/`BluetoothWatcher.exe` architecture
+implemented this round, pending Patrick's real-machine verification
 
 ---
 

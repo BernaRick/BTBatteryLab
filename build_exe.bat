@@ -128,14 +128,49 @@ echo [3/3] Copying the packaged Python collector into the build...
 xcopy /e /i /y "%PYIBUILD%\dist\btbatterylab" "%DIST%\btbatterylab\" >nul
 echo.
 
+rem A small stop.bat alongside BluetoothWatcher.exe: neither it nor
+rem the Python collector it launches has a console window any more
+rem (see BluetoothWatcher.csproj's OutputType and the dashboard's
+rem own exit icon), so there's no Ctrl+C/ENTER to stop them with -
+rem this taskkill (with /T, so it takes the embedded Python
+rem collector down too) is the equivalent for people running the
+rem built .exe instead of run.bat/stop.bat from source.
+(
+    echo @echo off
+    echo setlocal
+    echo.
+    echo rem Stops BTBatteryLab. BluetoothWatcher.exe ^(this folder^) runs with
+    echo rem no visible window and starts the Python collector as its own
+    echo rem background child process - killing BluetoothWatcher.exe's whole
+    echo rem process tree ^(the /T flag below^) stops both, whether or not you
+    echo rem already used the dashboard's own exit icon first.
+    echo.
+    echo echo Stopping BTBatteryLab...
+    echo taskkill /F /IM BluetoothWatcher.exe /T ^>nul 2^>nul
+    echo if errorlevel 1 ^(
+    echo     echo BTBatteryLab wasn't running.
+    echo ^) else ^(
+    echo     echo Done.
+    echo ^)
+    echo echo.
+    echo pause
+) > "%DIST%\stop.bat"
+echo.
+
 echo Done. Executable ready at:
 echo     %DIST%\BluetoothWatcher.exe
 echo.
 echo Just double-click BluetoothWatcher.exe: it also starts the
-echo Python collector in the background, without opening a second
-echo console window. Its log output goes to two places:
+echo Python collector in the background, without opening any
+echo console window - neither process has one any more. The
+echo Python side opens its own dashboard in your browser
+echo automatically (Start/Stop/Exit); to stop BluetoothWatcher
+echo itself (and the embedded collector, if the dashboard wasn't
+echo used to exit it first), run the stop.bat next to the .exe.
+echo Log output goes to three places:
 echo     Documents\BTBatteryLabData\collector.log          (raw console output)
 echo     Documents\BTBatteryLabData\logs\btbatterylab.log  (structured, leveled, rotating)
+echo     Documents\BTBatteryLabData\logs\watcher.log       (BluetoothWatcher's own output)
 echo.
 echo The data folder (Documents\BTBatteryLabData) and its config.json
 echo are resolved automatically for whichever Windows account runs

@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- WinExe (not Exe): this app is meant to run without a
+         visible console window, whether launched via run.bat (dev)
+         or as the standalone build_exe.bat exe an end user
+         double-clicks - see Program.cs's own comments on how it
+         waits/logs now that there is never a console attached. -->
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <UseWinRT>true</UseWinRT>
     <Nullable>enable</Nullable>

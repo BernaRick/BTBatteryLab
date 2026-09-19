@@ -8,15 +8,22 @@ itself is intentionally left untested, the same "UI layer isn't
 automated" gap already documented for BluetoothWatcher's C# side and
 for collector_manager's own NiceGUI wiring.
 
-This module has two jobs: turning a btbatterylab.ui.history_reader
-DeviceSummary (last-known-from-history) plus an optional live
+Three jobs: turning a btbatterylab.ui.history_reader DeviceSummary
+(last-known-from-history) plus an optional live
 UnifiedCollector.DeviceState (only available while the collector is
-running) into one table row for the device overview, and turning a
-list of BatteryPoint readings into the (x, y) series a chart plots.
+running) into one table row for the device overview (device_row()/
+build_device_rows(), plus the Quasar color name - "positive"/
+"warning"/"negative"/"grey" - each status/battery-level band maps
+to, for the dashboard's colored badges); turning a list of
+BatteryPoint readings into the (x, y) series a chart plots
+(chart_series()); and formatting a
+btbatterylab.analytics.battery_analytics.DeviceReport into the
+dashboard's Analysis card (analysis_summary()).
 """
 
 from __future__ import annotations
 
+from btbatterylab.analytics.battery_analytics import DeviceReport, format_hours
 from btbatterylab.collector.unified_collector import DeviceState
 from btbatterylab.ui.history_reader import BatteryPoint, DeviceSummary
 
@@ -35,6 +42,33 @@ DEFAULT_WINDOW_LABEL = "Last 7 days"
 STATUS_ONLINE = "Online"
 STATUS_OFFLINE = "Offline"
 STATUS_UNKNOWN = "Unknown"
+
+# Quasar color names (the framework NiceGUI's components are built
+# on) for each online/offline state, used to color the dashboard's
+# status badges - "positive"/"warning"/"negative"/"grey" are Quasar's
+# own reserved status roles, matching the same "positive"/"negative"
+# choices already used for the live control panel's own status badge
+# (see btbatterylab.ui.app) so the whole page reads consistently.
+STATUS_COLOR = {
+    STATUS_ONLINE: "positive",
+    STATUS_OFFLINE: "grey",
+    STATUS_UNKNOWN: "grey",
+}
+
+# Battery-level bands for the "make it stand out" ask: a reading is
+# "good" at or above 50%, "warning" from 20% up to (not including)
+# 50%, and "critical" below 20% - the same thresholds the
+# battery-history chart shades (see btbatterylab.ui.app), so a table
+# row and the chart always agree on what counts as low.
+BATTERY_GOOD_THRESHOLD = 50
+BATTERY_WARNING_THRESHOLD = 20
+
+BATTERY_STATUS_COLOR = {
+    "good": "positive",
+    "warning": "warning",
+    "critical": "negative",
+    "unknown": "grey",
+}
 
 
 def device_status(
@@ -57,6 +91,22 @@ def device_status(
         return STATUS_UNKNOWN
 
     return STATUS_ONLINE if live_state.online else STATUS_OFFLINE
+
+
+def battery_level_status(percent: int | None) -> str:
+    """
+    Which band a battery reading falls into - "good" (>=50%),
+    "warning" (20-49%), "critical" (<20%), or "unknown" when there is
+    no reading at all - see BATTERY_GOOD_THRESHOLD/BATTERY_WARNING_THRESHOLD.
+    """
+
+    if percent is None:
+        return "unknown"
+    if percent < BATTERY_WARNING_THRESHOLD:
+        return "critical"
+    if percent < BATTERY_GOOD_THRESHOLD:
+        return "warning"
+    return "good"
 
 
 def device_row(
@@ -82,13 +132,19 @@ def device_row(
     else:
         battery = f"{summary.last_battery_percent}%"
 
+    status = device_status(summary.address, live_snapshot, collector_running)
+
     return {
         "address": summary.address,
         "name": name,
         "battery": battery,
+        "battery_color": BATTERY_STATUS_COLOR[
+            battery_level_status(summary.last_battery_percent)
+        ],
         "source": summary.last_battery_source or "—",
         "last_seen": summary.last_seen.strftime("%Y-%m-%d %H:%M:%S"),
-        "status": device_status(summary.address, live_snapshot, collector_running),
+        "status": status,
+        "status_color": STATUS_COLOR[status],
     }
 
 
@@ -125,3 +181,44 @@ def chart_series(points: list[BatteryPoint]) -> list[list]:
     """
 
     return [[point.timestamp.isoformat(), point.battery_percent] for point in points]
+
+
+def analysis_summary(report: DeviceReport) -> dict:
+    """
+    Formats a btbatterylab.analytics.battery_analytics.DeviceReport
+    (drain rate, estimated remaining runtime, session counts, min/max/
+    average percent) into the display strings the dashboard's Analysis
+    card shows - same idea as device_row(), just for the analytics
+    side of the same window/device selection instead of the live/
+    history overview.
+    """
+
+    if report.drain_rate_percent_per_hour is None:
+        drain_rate = "Not enough data"
+    else:
+        drain_rate = f"{report.drain_rate_percent_per_hour:.1f}%/h"
+
+    if report.estimated_runtime_hours is None:
+        estimated_runtime = "Unknown"
+    else:
+        estimated_runtime = format_hours(report.estimated_runtime_hours)
+
+    if report.avg_percent is None:
+        average_battery = "—"
+    else:
+        average_battery = f"{report.avg_percent:.0f}%"
+
+    if report.min_percent is None or report.max_percent is None:
+        battery_range = "—"
+    else:
+        battery_range = f"{report.min_percent}%–{report.max_percent}%"
+
+    return {
+        "drain_rate": drain_rate,
+        "estimated_runtime": estimated_runtime,
+        "average_battery": average_battery,
+        "battery_range": battery_range,
+        "reading_count": report.reading_count,
+        "discharge_session_count": report.discharge_session_count,
+        "charge_session_count": len(report.charge_sessions),
+    }

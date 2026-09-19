@@ -22,6 +22,25 @@ string dataDirectory =
 
 Directory.CreateDirectory(dataDirectory);
 
+// This process has no console at all any more (OutputType=WinExe -
+// see BluetoothWatcher.csproj), so every Console.WriteLine below
+// would otherwise just vanish (.NET treats a GUI-subsystem
+// process's Console.Out/Error as a no-op when nothing is attached).
+// Redirecting both to a plain log file - reset on every startup,
+// same idea as ble-events.jsonl below - keeps that diagnostic
+// output somewhere a person can actually read it, next to the
+// Python side's own logs\btbatterylab.log.
+string watcherLogDirectory = Path.Combine(dataDirectory, "logs");
+Directory.CreateDirectory(watcherLogDirectory);
+var watcherLogWriter = new StreamWriter(
+    Path.Combine(watcherLogDirectory, "watcher.log"),
+    append: false)
+{
+    AutoFlush = true,
+};
+Console.SetOut(watcherLogWriter);
+Console.SetError(watcherLogWriter);
+
 string logFile =
     Path.Combine(
         dataDirectory,
@@ -433,43 +452,24 @@ classicWatcher.Start();
 
 Console.WriteLine();
 Console.WriteLine("Monitoring in progress.");
-Console.WriteLine("Press ENTER to stop.");
+Console.WriteLine(
+    "This process has no window to close or ENTER key to press any " +
+    "more (see BluetoothWatcher.csproj) - stop it with stop.bat, or " +
+    "Task Manager, instead. The Python collector has its own Exit " +
+    "button in its dashboard tab.");
 Console.WriteLine();
 
-Console.ReadLine();
-
-watcher.Stop();
-classicWatcher.Stop();
-
-if (collectorProcess is not null && !collectorProcess.HasExited)
-{
-    try
-    {
-        collectorProcess.Kill(entireProcessTree: true);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine(
-            $"Could not stop the Python collector: {ex.Message}");
-    }
-}
-
-lock (trackedDevices)
-{
-    foreach (BluetoothLEDevice device in trackedDevices.Values)
-    {
-        device.Dispose();
-    }
-
-    trackedDevices.Clear();
-}
-
-lock (trackedClassicDevices)
-{
-    foreach (BluetoothDevice device in trackedClassicDevices.Values)
-    {
-        device.Dispose();
-    }
-
-    trackedClassicDevices.Clear();
-}
+// No more Console.ReadLine(): with no console attached (OutputType=
+// WinExe), there is nothing for it to read - it would return
+// immediately instead of blocking, which used to be exactly how a
+// person told this process to stop. Now that stopping means an
+// external kill (stop.bat's taskkill, Task Manager, or the whole
+// build_exe.bat-produced release being closed some other way) rather
+// than a keypress this process can see, it just runs until that
+// happens. taskkill's /T (process-tree) flag takes the embedded
+// Python collector down with it in the standalone build - see
+// collectorProcess above - so the graceful stop/cleanup that used to
+// live here (Stop()ing the watchers, killing collectorProcess,
+// Dispose()ing tracked devices) no longer has anything left to do:
+// the OS reclaims all of that on process exit either way.
+await Task.Delay(Timeout.Infinite);

@@ -149,26 +149,42 @@ Analyze:
 A single [NiceGUI](https://nicegui.io/)-based application (decided
 2026-09-19, replacing the Streamlit dashboard originally planned here
 — see [docs/roadmap.md](./docs/roadmap.md) for the full decision),
-covering two things at once:
+with a header (title, a manual refresh button, and an exit button —
+see below), then three parts:
 
-- **Live side**: a control panel for the running collector itself —
-  a Start/Stop button plus its current status (`running`, `stopped`,
-  or `error` with a message) — replacing today's console
-  window/log-file-only visibility into what the collector is doing.
-  **Working now**: running `main.py` (directly, via `run.bat`, or via
-  the standalone `.exe`) opens this panel in your browser.
-- **Historical side**: a device overview table (name, address,
-  last known battery reading, online/offline status, last seen),
-  a name/address filter, and a battery-history line chart with a
-  device and time-window picker (last 24 hours/7/30/90 days).
+- **Live control panel**: Start/Stop for the collector itself plus
+  its current status (`running`, `stopped`, or `error` with a
+  message) — replacing the old console window/log-file-only
+  visibility into what the collector is doing. **Working, verified
+  on real hardware.**
+- **Device overview and battery history**: a device table (name,
+  address, last known battery reading, online/offline status, last
+  seen — battery level and status shown as colored badges, never
+  color alone), a name/address filter, and a battery-history line
+  chart with a device and time-window picker (last 24 hours/7/30/90
+  days) — the chart shades the same low/medium-battery bands the
+  table's badges use, so a low stretch is visible on the chart too.
   Online/offline only ever reflects the current run — that state
-  lives in memory while the collector runs, and is never written
-  to the database — so it shows "Unknown" whenever the collector
-  is stopped or a device hasn't been seen yet this run.
-  **Implemented, pending verification** — built and unit-tested
-  (the query layer and its data formatting, not the page itself —
-  see [Automated tests](#automated-tests)) but not yet confirmed
-  working end-to-end on a real machine.
+  lives in memory while the collector runs, and is never written to
+  the database — so it shows "Unknown" whenever the collector is
+  stopped or a device hasn't been seen yet this run. **Working,
+  verified on real hardware.**
+- **Analysis**: for whichever device/window is picked above, the
+  same drain-rate/estimated-runtime/session-detection numbers the
+  `analytics` CLI already computes (see
+  [Battery analytics](#battery-analytics-python--m-btbatterylabanalytics)
+  below) — drain rate, estimated remaining runtime, battery range and
+  average, and charge/discharge session counts — so that analysis is
+  visible in the dashboard itself, not just from a terminal.
+  **Implemented, pending verification** — the query/formatting layer
+  is unit-tested (see [Automated tests](#automated-tests)), but the
+  page itself isn't, the same deliberate gap noted below.
+
+Refreshes automatically every few seconds, or immediately via the
+refresh icon in the header. The exit icon next to it stops the
+collector and closes the whole app — see
+[Quick start](#quick-start-runbat) below for why that's needed now
+that `run.bat` no longer opens a console window for it.
 
 ---
 
@@ -250,13 +266,15 @@ BTBatteryLab has two parts that run side by side, both living in this one reposi
 
 ### Quick start: `run.bat`
 
-Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below), each in its own console window.
+Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below) — both run invisibly in the background now, with no console windows: the collector's own dashboard (which opens in your browser automatically) is where you see what's happening and control it, including a Start/Stop for monitoring and an exit icon that closes the whole Python side. **To stop everything**: click the exit icon in the dashboard, then double-click [`stop.bat`](./stop.bat) (stops `BluetoothWatcher`, which has no dashboard of its own). This is new as of 2026-09-19 and not yet verified end-to-end on a real machine — see the note below.
+
+> **Not yet verified**: hiding both windows (`pythonw.exe` for the collector, `BluetoothWatcher.csproj`'s `OutputType` switched to `WinExe`) and the exit icon/`stop.bat` replacing Ctrl+C/ENTER were all written and syntax-checked in a sandbox with no Windows machine or `nicegui`/`dotnet` available to actually run them — see [docs/roadmap.md](./docs/roadmap.md) for the same caveat in more detail. If `run.bat` doesn't behave as described, the previous, console-windowed behavior can be restored by reverting `BluetoothWatcher.csproj`'s `OutputType` to `Exe` and running the collector with `python.exe` instead of `pythonw.exe`.
 
 ### Standalone build: `build_exe.bat`
 
-For a single double-click with only one console window, run [`build_exe.bat`](./build_exe.bat) (needs the `.venv` above, plus the .NET 8 SDK — it installs PyInstaller itself if missing). It packages the Python collector with PyInstaller and publishes `BluetoothWatcher` self-contained into `dist/release/`; the result, `dist/release/BluetoothWatcher.exe`, starts the Python collector for you in the background (no separate window) when you double-click it.
+For a single double-click with no console windows at all, run [`build_exe.bat`](./build_exe.bat) (needs the `.venv` above, plus the .NET 8 SDK — it installs PyInstaller itself if missing). It packages the Python collector with PyInstaller and publishes `BluetoothWatcher` self-contained into `dist/release/`; the result, `dist/release/BluetoothWatcher.exe`, starts the Python collector for you in the background when you double-click it, and opens its dashboard in your browser. A `stop.bat` is generated alongside the `.exe` for stopping both (see the note above — same "not yet verified" caveat applies here, since `BluetoothWatcher.exe` is windowless the same way now).
 
-This has now been verified on real hardware: single console window, background collector startup, `collector.log` populated, and battery readings for classic devices arriving within seconds of connect. The data path is resolved automatically (see [Configuration](#configuration) below), so the build is no longer tied to one specific machine/user.
+This has previously been verified on real hardware (before today's windowless change): background collector startup, `collector.log` populated, and battery readings for classic devices arriving within seconds of connect. The data path is resolved automatically (see [Configuration](#configuration) below), so the build is no longer tied to one specific machine/user.
 
 ### Manual start (or if you want to see what `run.bat`/`build_exe.bat` do)
 
@@ -267,7 +285,7 @@ cd BluetoothWatcher
 dotnet run
 ```
 
-This discovers your paired Bluetooth devices — both BLE and classic/BR-EDR — tracks their connection status in real time, and writes events to `Documents\BTBatteryLabData\ble-events.jsonl`.
+This discovers your paired Bluetooth devices — both BLE and classic/BR-EDR — tracks their connection status in real time, and writes events to `Documents\BTBatteryLabData\ble-events.jsonl`. Since `BluetoothWatcher.csproj`'s `OutputType` is `WinExe` (see above), this no longer prints its progress to this console — that output now goes to `Documents\BTBatteryLabData\logs\watcher.log` instead, whether run this way or via `run.bat`. Stop it with Ctrl+C in this terminal (or `stop.bat`/Task Manager if started via `run.bat` instead, where there's no terminal to Ctrl+C in).
 
 #### 2. Run the collector (Python)
 
@@ -275,11 +293,11 @@ This discovers your paired Bluetooth devices — both BLE and classic/BR-EDR —
 .venv\Scripts\python.exe -m btbatterylab.main
 ```
 
-This follows that same `ble-events.jsonl` file live, and polls Windows PnP in the background (every 5 minutes by default, or immediately after a classic device connects) to read battery levels for devices that don't expose them over BLE — earbuds and headsets, mostly. It also opens BTBatteryLab's [NiceGUI-based UI](#dashboard) in your default browser, with a live Start/Stop control for this same collector — closing the browser tab doesn't stop it, only pressing Stop (or closing this process) does. If you pulled this change into an existing `.venv`, re-run `.venv\Scripts\pip install -e .` first to pick up the new `nicegui` dependency.
+This follows that same `ble-events.jsonl` file live, and polls Windows PnP in the background (every 5 minutes by default, or immediately after a classic device connects) to read battery levels for devices that don't expose them over BLE — earbuds and headsets, mostly. It also opens BTBatteryLab's [NiceGUI-based UI](#dashboard) in your default browser, with a live Start/Stop control for this same collector, plus an exit icon that closes this whole process — closing the browser tab alone doesn't stop it. If you pulled this change into an existing `.venv`, re-run `.venv\Scripts\python.exe -m pip install -e .` first to pick up the new `nicegui` dependency.
 
 > **Tip:** start the Python collector before `dotnet run` if you can. The collector only follows *new* lines written after it starts, so if the watcher's initial "device found" events are written first, that device's online/offline status stays unknown (`?`) until the next real connect/disconnect.
 
-This is still an early-development project — `build_exe.bat` above gets you a single double-clickable `.exe`, verified on real hardware, and it now works from any Windows account without editing source (see [Configuration](#configuration)).
+This is still an early-development project — `build_exe.bat` above gets you a single double-clickable `.exe`, previously verified on real hardware, and it now works from any Windows account without editing source (see [Configuration](#configuration)).
 
 ### Configuration
 
@@ -326,7 +344,7 @@ The one-shot CLI report tools (`btbatterylab.analytics`, `btbatterylab.export`) 
 
 ### Automated tests
 
-The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging, SQLite storage, battery analytics (including regression tests for the two real-data drain-rate bugs described in the [roadmap](docs/roadmap.md)), CSV export, the unified collector's event-handling logic, the JSONL tail monitor, and the NiceGUI app's Start/Stop/error state machine (`CollectorManager`), read-only history queries (`history_reader`), and dashboard row/chart formatting (`dashboard_data`). `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run`, so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required. Not covered: the NiceGUI page itself (`btbatterylab.ui.app`) — its rendering isn't automated, the same deliberate gap as `BluetoothWatcher`'s C# side (see [Project Roadmap](#project-roadmap)); the state/query/formatting logic it's built on (`CollectorManager`, `history_reader`, `dashboard_data`) is what's actually tested.
+The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging (including a regression test for the headless `pythonw.exe` case, where `sys.stderr` is `None` and the console log handler must be skipped instead of crashing), SQLite storage, battery analytics (including regression tests for the two real-data drain-rate bugs described in the [roadmap](docs/roadmap.md)), CSV export, the unified collector's event-handling logic, the JSONL tail monitor, and the NiceGUI app's Start/Stop/error state machine (`CollectorManager`), read-only history queries (`history_reader`), and dashboard row/chart formatting, battery-level color banding, and Analysis-card formatting (`dashboard_data`). `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run`, so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required. Not covered: the NiceGUI page itself (`btbatterylab.ui.app`) — its rendering isn't automated, the same deliberate gap as `BluetoothWatcher`'s C# side (see [Project Roadmap](#project-roadmap)); the state/query/formatting logic it's built on (`CollectorManager`, `history_reader`, `dashboard_data`) is what's actually tested.
 
 This is also the first thing to run if something isn't working and you're not sure why — a clean pass is a quick way to rule out a broken install before digging further.
 
@@ -365,11 +383,14 @@ The plain `unittest` invocation still works if you'd rather have the raw output 
 
 ### v0.2
 
-- NiceGUI-based application (replaces the originally-planned Streamlit dashboard) ⚪ Planned — see [docs/roadmap.md](./docs/roadmap.md)
-- Device overview
-- Live battery status
-- History charts
-- Live collector control panel (start/stop, current status)
+- NiceGUI-based application (replaces the originally-planned Streamlit dashboard) ✅
+- Device overview ✅
+- Live battery status ✅
+- History charts ✅
+- Live collector control panel (start/stop, current status) ✅
+- Analysis card (drain rate, estimated runtime, battery range, sessions) ✅
+- Visual restyle (colored status/battery badges, chart threshold bands) ✅ — not yet verified on real hardware, see [docs/roadmap.md](./docs/roadmap.md)
+- Windowless startup (`run.bat` launches both processes with no console windows) ✅ — not yet verified on real hardware, see [docs/roadmap.md](./docs/roadmap.md)
 
 ### v0.3
 
