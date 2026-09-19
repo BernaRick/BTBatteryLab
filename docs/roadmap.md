@@ -502,18 +502,17 @@ standalone `.exe` build needs no special-case handling for "no console
 windows" any more - `build_exe.bat` now generates a matching `stop.bat`
 next to `BluetoothWatcher.exe` in the dist folder.
 
-**Not yet verified on a real machine**: this round's C# changes
-(`BluetoothWatcher.csproj`, `Program.cs`) could not be compiled - no
-`dotnet` SDK available in this session - and were checked only by
-careful manual review; the NiceGUI changes (`app.py`,
+**Not verified on a real machine when written**: this round's C#
+changes (`BluetoothWatcher.csproj`, `Program.cs`) could not be
+compiled - no `dotnet` SDK available in this session - and were
+checked only by careful manual review; the NiceGUI changes (`app.py`,
 `dashboard_data.py`) could only be checked with `ast.parse`, the same
 limitation as before. If the windowless behavior causes problems, the
 rollback is straightforward: revert `BluetoothWatcher.csproj`'s
 `OutputType` to `Exe` and `run.bat`'s Python launch back to
-`python.exe`. Patrick needs to `git pull`, rebuild, and verify both the
-restyled dashboard (badges, chart bands, Analysis card, refresh/exit
-icons) and the new windowless `run.bat`/`stop.bat` flow before this is
-considered done.
+`python.exe`. This round's first real test did surface a real bug -
+see the follow-up entry right below - but once that was fixed,
+Patrick confirmed the whole round works ("ok funziona, fatto test").
 
 ### Follow-up bug: `run.bat` stopped opening the browser (2026-09-19)
 
@@ -557,20 +556,25 @@ doesn't raise (the actual bug, reproduced directly); only the one
 that's `None` gets redirected. **158 tests total, all passing**
 (155 from the round above plus these 3).
 
-**Still not independently confirmed** - this is a reasoned diagnosis
-from how `pythonw.exe` behaves, not a traceback actually seen,
-since there was nothing to see it on. If `run.bat` still doesn't
-open the browser after this fix, `logs\pythonw-stdio.log` (new)
+**Confirmed working (2026-09-19, Patrick)**: "ok funziona, fatto
+test" - the browser opens again, and the round above (badges, chart
+bands, Analysis card, refresh/exit icons, windowless `run.bat`/
+`stop.bat`) works. This diagnosis was reasoned from how `pythonw.exe`
+behaves rather than from a traceback actually seen (there was
+nothing to see it on), so it's worth remembering `logs\pythonw-
+stdio.log` (new) exists if anything similar ever resurfaces - it
 should now capture whatever a third-party library would otherwise
-have printed - check it, alongside `logs\btbatterylab.log`, before
-assuming the same cause.
+have printed, alongside `logs\btbatterylab.log`.
 
 ### Status
 
-🟡 In progress - live collector control panel and historical dashboard
-implemented and verified on real hardware; Analysis card, visual
-restyle, and windowless `run.bat`/`BluetoothWatcher.exe` architecture
-implemented this round, pending Patrick's real-machine verification
+🟢 Feature-complete and verified on real hardware - live collector
+control panel, historical dashboard, Analysis card, visual restyle,
+and windowless `run.bat`/`BluetoothWatcher.exe` architecture all
+implemented and confirmed working by Patrick. Standalone `.exe`
+packaging (`build_exe.bat`) still needs a rebuild to pick up this
+round's changes - see the possible-next-steps list in
+`claude/project-status.md`.
 
 ---
 

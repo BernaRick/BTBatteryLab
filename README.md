@@ -268,7 +268,7 @@ BTBatteryLab has two parts that run side by side, both living in this one reposi
 
 Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below) — both run invisibly in the background now, with no console windows: the collector's own dashboard (which opens in your browser automatically) is where you see what's happening and control it, including a Start/Stop for monitoring and an exit icon that closes the whole Python side. **To stop everything**: click the exit icon in the dashboard, then double-click [`stop.bat`](./stop.bat) (stops `BluetoothWatcher`, which has no dashboard of its own). This is new as of 2026-09-19 and not yet verified end-to-end on a real machine — see the note below.
 
-> **Not yet verified**: hiding both windows (`pythonw.exe` for the collector, `BluetoothWatcher.csproj`'s `OutputType` switched to `WinExe`) and the exit icon/`stop.bat` replacing Ctrl+C/ENTER were all written and syntax-checked in a sandbox with no Windows machine or `nicegui`/`dotnet` available to actually run them — see [docs/roadmap.md](./docs/roadmap.md) for the same caveat in more detail. An initial test already surfaced a real bug from exactly this gap (`run.bat` silently failing to open the browser at all, since `pythonw.exe` gives the process no console to show an error on) — see [docs/roadmap.md](./docs/roadmap.md)'s "Follow-up bug" entry for the diagnosis and fix (`logging_setup.ensure_console_streams()`), which is itself unverified on real hardware for the same reason. If `run.bat` still doesn't open the browser, check `logs\pythonw-stdio.log` (new) alongside `logs\btbatterylab.log`. If `run.bat` doesn't behave as described at all, the previous, console-windowed behavior can be restored by reverting `BluetoothWatcher.csproj`'s `OutputType` to `Exe` and running the collector with `python.exe` instead of `pythonw.exe`.
+> **Verified on real hardware (2026-09-19)**: hiding both windows (`pythonw.exe` for the collector, `BluetoothWatcher.csproj`'s `OutputType` switched to `WinExe`) was written and syntax-checked in a sandbox with no Windows machine or `nicegui`/`dotnet` available to actually run it. The first real test surfaced a bug from exactly that gap (`run.bat` silently failing to open the browser at all, since `pythonw.exe` gives the process no console to show an error on) — diagnosed and fixed (`logging_setup.ensure_console_streams()`, see [docs/roadmap.md](./docs/roadmap.md)'s "Follow-up bug" entry) without being able to reproduce it directly, and confirmed working by Patrick right after ("ok funziona, fatto test"). If `run.bat` ever stops opening the browser again, check `logs\pythonw-stdio.log` alongside `logs\btbatterylab.log`. If the windowless behavior itself causes problems, it can be rolled back by reverting `BluetoothWatcher.csproj`'s `OutputType` to `Exe` and running the collector with `python.exe` instead of `pythonw.exe`.
 
 ### Standalone build: `build_exe.bat`
 
@@ -389,8 +389,8 @@ The plain `unittest` invocation still works if you'd rather have the raw output 
 - History charts ✅
 - Live collector control panel (start/stop, current status) ✅
 - Analysis card (drain rate, estimated runtime, battery range, sessions) ✅
-- Visual restyle (colored status/battery badges, chart threshold bands) ✅ — not yet verified on real hardware, see [docs/roadmap.md](./docs/roadmap.md)
-- Windowless startup (`run.bat` launches both processes with no console windows) ✅ — not yet verified on real hardware, see [docs/roadmap.md](./docs/roadmap.md)
+- Visual restyle (colored status/battery badges, chart threshold bands) ✅ — verified on real hardware
+- Windowless startup (`run.bat` launches both processes with no console windows) ✅ — verified on real hardware, after a follow-up fix (see [docs/roadmap.md](./docs/roadmap.md))
 
 ### v0.3
 
