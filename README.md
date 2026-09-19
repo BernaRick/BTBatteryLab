@@ -157,10 +157,18 @@ covering two things at once:
   window/log-file-only visibility into what the collector is doing.
   **Working now**: running `main.py` (directly, via `run.bat`, or via
   the standalone `.exe`) opens this panel in your browser.
-- **Historical side**: device overview, last known battery status,
-  historical battery charts, device filtering, online/offline
-  indicators. **Not started yet** — today's page has a placeholder
-  card for it instead.
+- **Historical side**: a device overview table (name, address,
+  last known battery reading, online/offline status, last seen),
+  a name/address filter, and a battery-history line chart with a
+  device and time-window picker (last 24 hours/7/30/90 days).
+  Online/offline only ever reflects the current run — that state
+  lives in memory while the collector runs, and is never written
+  to the database — so it shows "Unknown" whenever the collector
+  is stopped or a device hasn't been seen yet this run.
+  **Implemented, pending verification** — built and unit-tested
+  (the query layer and its data formatting, not the page itself —
+  see [Automated tests](#automated-tests)) but not yet confirmed
+  working end-to-end on a real machine.
 
 ---
 
@@ -318,7 +326,7 @@ The one-shot CLI report tools (`btbatterylab.analytics`, `btbatterylab.export`) 
 
 ### Automated tests
 
-The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging, SQLite storage, battery analytics (including regression tests for the two real-data drain-rate bugs described in the [roadmap](docs/roadmap.md)), CSV export, the unified collector's event-handling logic, the JSONL tail monitor, and the NiceGUI app's Start/Stop/error state machine (`CollectorManager`). `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run`, so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required. Not covered: the NiceGUI page itself (`btbatterylab.ui.app`) — its rendering isn't automated, the same deliberate gap as `BluetoothWatcher`'s C# side (see [Project Roadmap](#project-roadmap)); the state/logic it's built on (`CollectorManager`) is what's actually tested.
+The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging, SQLite storage, battery analytics (including regression tests for the two real-data drain-rate bugs described in the [roadmap](docs/roadmap.md)), CSV export, the unified collector's event-handling logic, the JSONL tail monitor, and the NiceGUI app's Start/Stop/error state machine (`CollectorManager`), read-only history queries (`history_reader`), and dashboard row/chart formatting (`dashboard_data`). `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run`, so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required. Not covered: the NiceGUI page itself (`btbatterylab.ui.app`) — its rendering isn't automated, the same deliberate gap as `BluetoothWatcher`'s C# side (see [Project Roadmap](#project-roadmap)); the state/query/formatting logic it's built on (`CollectorManager`, `history_reader`, `dashboard_data`) is what's actually tested.
 
 This is also the first thing to run if something isn't working and you're not sure why — a clean pass is a quick way to rule out a broken install before digging further.
 

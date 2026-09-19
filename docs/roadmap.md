@@ -407,18 +407,48 @@ the Start/Stop buttons control the collector correctly, and
 `logs\btbatterylab.log` keeps logging exactly as before - monitoring
 is confirmed unaffected by the new UI layer.
 
-Still open: the historical dashboard itself (device overview, battery
-charts, filtering, online/offline indicators - all of it still reads
-from the same `battery_log`/`devices` tables `analytics`/`export`
-already use, just not wired into this UI yet); and how this fits the
-existing `BluetoothWatcher.exe` standalone packaging (Step 2.4) - a
-NiceGUI app opens a browser tab, which changes what "no console
-windows" means for that build.
+**Historical dashboard implemented (2026-09-19)**: the placeholder card is
+now a real device overview table (name, address, last known battery
+reading and source, live online/offline status, last seen) with a
+name/address filter, plus a battery-history line chart (`ui.echart`,
+bundled with NiceGUI itself - no new dependency) with a device picker
+and a time-window picker (last 24 hours/7/30/90 days). Both refresh on
+a 5-second timer. Two new modules support this, both deliberately kept
+free of any `nicegui` import so they stay unit-testable the same way as
+`CollectorManager`:
+
+- `btbatterylab.ui.history_reader` - read-only queries over
+  `battery_log`/`devices` (`list_devices()`, `battery_history()`), using
+  a short-lived `sqlite3` connection per refresh rather than a shared
+  one - safe to do concurrently with `UnifiedCollector`'s own writer
+  connection since `SqliteStorage` already runs in WAL mode
+  (`tests/test_history_reader.py`, 12 tests).
+- `btbatterylab.ui.dashboard_data` - turns that history plus
+  `CollectorManager.snapshot()`'s live state into table rows and chart
+  series. Online/offline is live-only, same as the control panel's own
+  status: it's never persisted to SQLite, so it only ever reads
+  "Online"/"Offline" while the collector is actually running and has
+  observed that device this run - "Unknown" otherwise
+  (`tests/test_dashboard_data.py`, 16 tests).
+
+**Not yet verified on a real machine** - same limitation as the
+skeleton originally had: this session's sandboxes have no PyPI access,
+so `app.py`'s NiceGUI-specific code (which imports `nicegui`) could
+only be checked with `ast.parse` and written against NiceGUI's
+documented API, never actually run. No new dependency is needed
+(`ui.echart` ships with `nicegui` itself), so this is just a
+`git pull` + re-run away from being checked - Patrick still needs to
+confirm the dashboard actually renders and updates correctly.
+
+Still open: how this fits the existing `BluetoothWatcher.exe` standalone
+packaging (Step 2.4) - a NiceGUI app opens a browser tab, which changes
+what "no console windows" means for that build.
 
 ### Status
 
 🟡 In progress - live collector control panel implemented and verified
-on real hardware; historical dashboard not started
+on real hardware; historical dashboard implemented, pending Patrick's
+real-machine verification
 
 ---
 

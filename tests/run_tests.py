@@ -70,6 +70,8 @@ _AREA_LABELS = {
     "tests.test_analytics": "Battery analytics",
     "tests.test_export": "CSV export",
     "tests.test_collector_manager": "Collector control panel",
+    "tests.test_history_reader": "Dashboard history queries",
+    "tests.test_dashboard_data": "Dashboard data formatting",
 }
 
 
