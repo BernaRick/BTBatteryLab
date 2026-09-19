@@ -397,9 +397,15 @@ start/stop/error state machine has full automated test coverage
 (`tests/test_collector_manager.py`, 10 tests) since it's plain Python
 with no `nicegui` import; the NiceGUI page's own rendering isn't
 automated, the same deliberate gap as `BluetoothWatcher`'s C# side.
-Not yet verified on a real machine - this needs `pip install -e .`
-(picks up the new `nicegui` dependency) and a real run before it's
-confirmed working end to end.
+**Verified on a real machine (2026-09-19, Patrick)**: `pip install -e .`
+picked up `nicegui` without issues once run via
+`.venv\Scripts\python.exe -m pip install -e .` (a bare `pip`/`pip.exe`
+doesn't exist in this project's `.venv` - only `pip3.exe` - which
+confused PowerShell's command resolution; routing through
+`python.exe -m pip` sidesteps that). Running `main.py` opens the page,
+the Start/Stop buttons control the collector correctly, and
+`logs\btbatterylab.log` keeps logging exactly as before - monitoring
+is confirmed unaffected by the new UI layer.
 
 Still open: the historical dashboard itself (device overview, battery
 charts, filtering, online/offline indicators - all of it still reads
@@ -411,9 +417,8 @@ windows" means for that build.
 
 ### Status
 
-🟡 In progress - live collector control panel skeleton implemented,
-pending Patrick's real-machine verification; historical dashboard not
-started
+🟡 In progress - live collector control panel implemented and verified
+on real hardware; historical dashboard not started
 
 ---
 
