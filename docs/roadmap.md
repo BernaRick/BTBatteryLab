@@ -345,16 +345,49 @@ manual verification alone going into v0.2.
 
 ### Features
 
-- Streamlit dashboard
+- NiceGUI-based application (replaces the originally-planned Streamlit dashboard)
 - Device overview page
 - Live battery status
 - Historical battery charts
 - Device filtering
 - Online/offline device indicators
+- Live collector control panel (start/stop, current status - replaces console-only operation)
+
+### UI Technology Decision: NiceGUI
+
+Objective:
+
+Decide the technology and scope for v0.2's user interface before
+building it, rather than starting to code against an assumption.
+
+Decided (2026-09-19, Patrick): a single [NiceGUI](https://nicegui.io/)
+application, replacing the Streamlit dashboard originally planned
+here. Instead of two separate pieces - a Streamlit app for browsing
+historical analytics, and a console window/log file for the running
+collector - one NiceGUI app covers both:
+
+- **Historical side**: everything already listed above (device
+  overview, last known battery status per device, historical battery
+  charts, device filtering, online/offline indicators), reading from
+  the same `battery_log`/`devices` tables the `analytics`/`export`
+  CLIs already use.
+- **Live side**: a control panel for the running collector itself
+  (start/stop, current status) - replacing today's requirement of
+  watching a console window or `collector.log`/`logs\btbatterylab.log`
+  to know what's happening. This is the "UI instead of the console"
+  part of the decision.
+
+Not started - no code, dependency, or architecture decisions made yet
+beyond the choice of framework. Still open for when this step is
+picked up: whether the NiceGUI app runs as its own process, is
+launched by `main.py` itself, or replaces `main.py`'s entry point
+outright, and how it fits with the existing `BluetoothWatcher.exe`
+standalone packaging (Step 2.4).
 
 ### Status
 
-⚪ Planned
+⚪ Planned (UI technology decided: NiceGUI, single app for both the
+dashboard and live collector control - see below)
 
 ---
 
