@@ -1,8 +1,18 @@
 import logging
 
 from btbatterylab.config import load_config
-from btbatterylab.logging_setup import configure_logging
-from btbatterylab.ui.app import run_app
+from btbatterylab.logging_setup import configure_logging, ensure_console_streams
+
+# Must run before importing btbatterylab.ui.app just below, which pulls in
+# nicegui: under pythonw.exe (see run.bat), sys.stdout/sys.stderr are both
+# None, and nicegui/uvicorn touch one or the other during their own
+# startup - without this, that crashes the whole process silently before
+# the dashboard's browser tab ever opens. See ensure_console_streams()'s
+# own docstring for the full story; it's a no-op under a real console
+# (python.exe), so this doesn't change anything there.
+ensure_console_streams()
+
+from btbatterylab.ui.app import run_app  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

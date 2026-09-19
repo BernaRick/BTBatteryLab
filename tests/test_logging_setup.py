@@ -18,7 +18,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import btbatterylab.logging_setup as logging_setup
-from btbatterylab.logging_setup import LOG_FILENAME, LOG_SUBDIR, configure_logging
+from btbatterylab.logging_setup import (
+    LOG_FILENAME,
+    LOG_SUBDIR,
+    STDIO_LOG_FILENAME,
+    configure_logging,
+    ensure_console_streams,
+)
 
 
 class ConfigureLoggingTests(unittest.TestCase):
@@ -151,6 +157,72 @@ class ConfigureLoggingTests(unittest.TestCase):
         self.assertIn(
             "hello from a headless process", log_path.read_text(encoding="utf-8")
         )
+
+
+
+class EnsureConsoleStreamsTests(unittest.TestCase):
+    """
+    Regression tests for the pythonw.exe case that
+    test_no_console_handler_or_crash_when_stderr_is_none (above) only
+    partly covers: that test protects THIS module's own console
+    handler, but a plain print() or sys.stdout.isatty() call made by
+    other code (nicegui/uvicorn, during their own startup) needs both
+    sys.stdout and sys.stderr to be real objects, which
+    ensure_console_streams() is what guarantees.
+    """
+
+    def setUp(self) -> None:
+        self.data_dir = Path(tempfile.mkdtemp(prefix="btb_logging_stdio_"))
+        self.addCleanup(shutil.rmtree, self.data_dir, ignore_errors=True)
+
+        patcher = patch(
+            "btbatterylab.config.default_data_dir", return_value=self.data_dir
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_does_nothing_when_both_streams_are_already_real(self) -> None:
+        result = ensure_console_streams()
+
+        self.assertIsNone(result)
+        self.assertFalse((self.data_dir / LOG_SUBDIR / STDIO_LOG_FILENAME).exists())
+
+    def test_redirects_both_streams_when_both_are_none(self) -> None:
+        with patch.object(logging_setup.sys, "stdout", None), patch.object(
+            logging_setup.sys, "stderr", None
+        ):
+            log_path = ensure_console_streams()
+
+            self.assertEqual(
+                log_path, self.data_dir / LOG_SUBDIR / STDIO_LOG_FILENAME
+            )
+            self.assertIsNotNone(logging_setup.sys.stdout)
+            self.assertIsNotNone(logging_setup.sys.stderr)
+
+            # Close the file this opened once the test is done - on
+            # Windows a still-open handle can block the temp
+            # directory's own cleanup (addCleanup above), the same
+            # class of issue as the OneDrive file-lock notes elsewhere
+            # in this project.
+            self.addCleanup(logging_setup.sys.stdout.close)
+
+            # This is the actual bug being guarded against: a plain
+            # print() (as a third-party library like nicegui/uvicorn
+            # might do during startup) must not raise.
+            print("hello from a headless print()")
+            logging_setup.sys.stdout.flush()
+
+        self.assertIn(
+            "hello from a headless print()", log_path.read_text(encoding="utf-8")
+        )
+
+    def test_redirects_only_the_stream_that_is_none(self) -> None:
+        with patch.object(logging_setup.sys, "stdout", None):
+            log_path = ensure_console_streams()
+            self.addCleanup(logging_setup.sys.stdout.close)
+
+        self.assertIsNotNone(log_path)
+        self.assertIsNotNone(logging_setup.sys.stdout)
 
 
 if __name__ == "__main__":

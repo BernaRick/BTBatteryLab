@@ -515,6 +515,56 @@ restyled dashboard (badges, chart bands, Analysis card, refresh/exit
 icons) and the new windowless `run.bat`/`stop.bat` flow before this is
 considered done.
 
+### Follow-up bug: `run.bat` stopped opening the browser (2026-09-19)
+
+Patrick pulled the round above and reported exactly the kind of
+problem it was flagged as untested for: `run.bat` no longer opened
+the dashboard in the browser at all ("run.bat non apre piu il
+browser con la UI"). With no console window left to show a
+traceback on, there was nothing to look at directly - diagnosed by
+reasoning through what `pythonw.exe` actually does differently from
+`python.exe`.
+
+**Root cause**: `pythonw.exe` sets `sys.stdin`, `sys.stdout`, AND
+`sys.stderr` all to `None` - not just `sys.stderr`, which is the
+only one `logging_setup.configure_logging()`'s existing guard (see
+above) checks. That guard only protects this project's own console
+log handler from crashing; it does nothing about a plain `print()`
+or a `sys.stdout.isatty()` check made by *other* code before that
+point - and both `nicegui` and the `uvicorn` server underneath it
+commonly do exactly that during their own startup (deciding whether
+to use colored output, printing a startup banner, and so on). Under
+`python.exe` in a real terminal this is harmless; under
+`pythonw.exe`, calling `.write()` or `.isatty()` on `None` raises
+`AttributeError`, which - with no console to print the traceback on
+either - kills the whole process silently before the browser is
+ever opened. This fits the report exactly: no error, no window, no
+dashboard.
+
+**Fix**: a new `ensure_console_streams()` in `logging_setup.py`,
+called as literally the first thing `main.py` does - before its
+import of `btbatterylab.ui.app` (which is what pulls in `nicegui`)
+- redirects `sys.stdout`/`sys.stderr` to a real file
+(`logs\pythonw-stdio.log`) whenever either is `None`, and is a
+no-op otherwise (so `python.exe` in a real terminal is unaffected).
+This is the standard fix for a `pythonw.exe`-launched application -
+the same category of problem BluetoothWatcher's `Console.SetOut`/
+`SetError` redirection already solved on the C# side, just not yet
+applied on the Python side until now. **3 new tests**
+(`tests/test_logging_setup.py`) cover: both streams already real is
+a no-op; both `None` get redirected and a plain `print()` afterward
+doesn't raise (the actual bug, reproduced directly); only the one
+that's `None` gets redirected. **158 tests total, all passing**
+(155 from the round above plus these 3).
+
+**Still not independently confirmed** - this is a reasoned diagnosis
+from how `pythonw.exe` behaves, not a traceback actually seen,
+since there was nothing to see it on. If `run.bat` still doesn't
+open the browser after this fix, `logs\pythonw-stdio.log` (new)
+should now capture whatever a third-party library would otherwise
+have printed - check it, alongside `logs\btbatterylab.log`, before
+assuming the same cause.
+
 ### Status
 
 🟡 In progress - live collector control panel and historical dashboard
