@@ -69,6 +69,7 @@ _AREA_LABELS = {
     "tests.test_sqlite_storage": "Database storage",
     "tests.test_analytics": "Battery analytics",
     "tests.test_export": "CSV export",
+    "tests.test_collector_manager": "Collector control panel",
 }
 
 

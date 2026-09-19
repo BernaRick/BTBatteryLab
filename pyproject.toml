@@ -6,6 +6,12 @@ authors = [
     { name = "Patrick Bernardoni" }
 ]
 requires-python = ">=3.11"
+dependencies = [
+    # v0.2's UI (see docs/roadmap.md, "UI Technology Decision: NiceGUI")
+    # - the project's first third-party runtime dependency; everything
+    # before this was standard-library only.
+    "nicegui>=2.0",
+]
 
 [build-system]
 requires = ["setuptools>=61"]

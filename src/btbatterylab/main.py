@@ -1,8 +1,8 @@
 import logging
 
-from btbatterylab.collector.unified_collector import UnifiedCollector
 from btbatterylab.config import load_config
 from btbatterylab.logging_setup import configure_logging
+from btbatterylab.ui.app import run_app
 
 logger = logging.getLogger(__name__)
 
@@ -24,19 +24,14 @@ def main() -> None:
     logger.info(f"Config file: {config.config_path}")
     logger.info(f"Log file: {log_path}")
 
-    collector = UnifiedCollector(
-        jsonl_path=config.jsonl_path,
-        db_path=config.db_path,
-        poll_interval_seconds=config.poll_interval_seconds,
-        min_poll_spacing_seconds=config.min_poll_spacing_seconds,
-        pnp_timeout_seconds=config.pnp_timeout_seconds,
-    )
-
-    try:
-        collector.start()
-
-    except KeyboardInterrupt:
-        collector.stop()
+    # v0.2: this used to construct and start UnifiedCollector directly
+    # (blocking on it, with a KeyboardInterrupt handler calling
+    # collector.stop()). Now the NiceGUI app owns that lifecycle
+    # instead - see btbatterylab.ui.app and
+    # btbatterylab.ui.collector_manager - so the collector can be
+    # started/stopped from its Start/Stop buttons rather than only by
+    # killing the whole process.
+    run_app(config)
 
 
 if __name__ == "__main__":

@@ -377,17 +377,43 @@ collector - one NiceGUI app covers both:
   to know what's happening. This is the "UI instead of the console"
   part of the decision.
 
-Not started - no code, dependency, or architecture decisions made yet
-beyond the choice of framework. Still open for when this step is
-picked up: whether the NiceGUI app runs as its own process, is
-launched by `main.py` itself, or replaces `main.py`'s entry point
-outright, and how it fits with the existing `BluetoothWatcher.exe`
-standalone packaging (Step 2.4).
+Architecture decided (2026-09-19, resolving the "still open" question
+above): a single process. `main.py` now starts the NiceGUI app instead
+of constructing/starting `UnifiedCollector` directly; the app itself
+owns the collector's lifecycle (`btbatterylab.ui.collector_manager.
+CollectorManager`), running it on a background thread since
+`UnifiedCollector.start()` blocks the calling thread (following the
+JSONL file) - the main thread stays free to run NiceGUI's own web
+server. Starting the app starts monitoring automatically, matching
+today's behavior; Stop is for pausing without closing the window, not
+an opt-in step.
+
+**Skeleton implemented**: `main.py` now opens a NiceGUI page
+(`btbatterylab.ui.app`) with a working live control panel - Start/Stop
+buttons and a status badge (`running`/`stopped`/`error`, with the error
+message shown if the collector dies unexpectedly) - plus a placeholder
+card for the historical side, not built yet. `CollectorManager`'s
+start/stop/error state machine has full automated test coverage
+(`tests/test_collector_manager.py`, 10 tests) since it's plain Python
+with no `nicegui` import; the NiceGUI page's own rendering isn't
+automated, the same deliberate gap as `BluetoothWatcher`'s C# side.
+Not yet verified on a real machine - this needs `pip install -e .`
+(picks up the new `nicegui` dependency) and a real run before it's
+confirmed working end to end.
+
+Still open: the historical dashboard itself (device overview, battery
+charts, filtering, online/offline indicators - all of it still reads
+from the same `battery_log`/`devices` tables `analytics`/`export`
+already use, just not wired into this UI yet); and how this fits the
+existing `BluetoothWatcher.exe` standalone packaging (Step 2.4) - a
+NiceGUI app opens a browser tab, which changes what "no console
+windows" means for that build.
 
 ### Status
 
-⚪ Planned (UI technology decided: NiceGUI, single app for both the
-dashboard and live collector control - see below)
+🟡 In progress - live collector control panel skeleton implemented,
+pending Patrick's real-machine verification; historical dashboard not
+started
 
 ---
 
