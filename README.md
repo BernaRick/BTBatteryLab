@@ -146,14 +146,19 @@ Analyze:
 
 ### Dashboard
 
-Planned dashboard features:
+Planned as a single [NiceGUI](https://nicegui.io/)-based application
+(decided 2026-09-19, replacing the Streamlit dashboard originally
+planned here — see [docs/roadmap.md](./docs/roadmap.md) for the full
+decision), covering two things at once:
 
-- Current battery levels
-- Runtime estimates
-- Historical charts
-- Multi-device overview
-- Device health indicators
-- Online/offline device status
+- **Historical side**: current battery levels, runtime estimates,
+  historical charts, multi-device overview, device health indicators,
+  online/offline device status.
+- **Live side**: a control panel for the running collector itself
+  (start/stop, current status), replacing today's console
+  window/log-file-only visibility into what the collector is doing.
+
+Not started yet — technology decided, no code or architecture written.
 
 ---
 
@@ -350,10 +355,11 @@ The plain `unittest` invocation still works if you'd rather have the raw output 
 
 ### v0.2
 
-- Streamlit dashboard
+- NiceGUI-based application (replaces the originally-planned Streamlit dashboard) ⚪ Planned — see [docs/roadmap.md](./docs/roadmap.md)
 - Device overview
 - Live battery status
 - History charts
+- Live collector control panel (start/stop, current status)
 
 ### v0.3
 
