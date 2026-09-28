@@ -387,9 +387,14 @@ def _build_header(
                 # browser sizes it directly from the CSS classes we give it
                 # - so we render it with ui.html() instead of ui.image() to
                 # bypass Quasar's <q-img> machinery entirely.
+                # Sized at 32px (h-8) originally, to roughly match the
+                # text-fallback's icon+label height - Patrick's own
+                # hardware test (2026-09-28) confirmed the logo now
+                # renders (the ui.html()/<img> fix above worked) but
+                # asked for it bigger, so it's now 48px (h-12).
                 ui.html(
                     f'<img src="{_LOGO_ROUTE}" alt="BTBatteryLab" '
-                    'class="h-8 w-auto">'
+                    'class="h-12 w-auto">'
                 )
             else:
                 ui.icon("bluetooth").classes("text-3xl text-primary")

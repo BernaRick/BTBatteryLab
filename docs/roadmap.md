@@ -791,7 +791,11 @@ enough to implement directly with judgment calls noted inline below.
   logo with `ui.html('<img src="/branding/logo" ...>')` instead of
   `ui.image(...)`, using a plain native `<img>` tag with no
   out-of-band measurement step, so the browser sizes it directly from
-  the same `h-8 w-auto` CSS classes as before.
+  the same `h-8 w-auto` CSS classes as before. **Confirmed working by
+  Patrick on real hardware** ("si vede") - the logo finally renders,
+  closing out this whole saga. He asked for it bigger (32px looked
+  small), so it's now 48px (`h-12` instead of `h-8`, still
+  `w-auto` for the aspect ratio).
 
 **Bugs, all root-caused by reading the actual code before fixing**:
 
