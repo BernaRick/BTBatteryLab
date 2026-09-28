@@ -692,7 +692,7 @@ five more UI requests and three more bugs, sent as a second `Test.txt`.
 No clarifying questions were needed this time - each item was clear
 enough to implement directly with judgment calls noted inline below.
 
-**UI requests, four of five implemented**:
+**UI requests, all five implemented**:
 
 - Header buttons "more minimal and visually uniform" - the status
   badge + separator combo from the round above was replaced with a
@@ -715,12 +715,15 @@ enough to implement directly with judgment calls noted inline below.
   device in the history/Analysis picker above, wired via NiceGUI's
   `ui.table`'s `rowClick` event - "(if possible)" in Patrick's
   wording; it was.
-- **Not yet done**: a logo to replace the "BTBatteryLab" text label.
-  Patrick said he has the image file but it wasn't attached to
-  `Test.txt` - the header now falls back to a logo automatically if
-  one is dropped at `src/btbatterylab/ui/assets/logo.png` (no code
-  change needed once he sends it), but the actual image is still
-  needed from him.
+- A logo replacing the "BTBatteryLab" text label - Patrick sent
+  `Vet1.svg` right after this round shipped, saved at
+  `src/btbatterylab/ui/assets/Vet1.svg`. The header's logo lookup was
+  originally hardcoded to a specific `logo.png` filename, which
+  wouldn't have matched an `.svg` with a different name at all -
+  caught before it could become a silent no-op, and generalized to
+  `_find_logo()`: picks the first image file (any name, any of
+  `.svg`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`) found in that directory,
+  falling back to the bluetooth icon + text label only if it's empty.
 
 **Bugs, all root-caused by reading the actual code before fixing**:
 
@@ -790,16 +793,15 @@ gap as every round before this one; what's underneath it
 **Pending verification on real hardware** - written and unit-tested in
 this same sandbox (no Windows machine, `nicegui`, or real Bluetooth
 hardware available here, same situation as every previous round), not
-yet confirmed by Patrick. The logo item additionally needs the image
-file from him before it can be finished at all.
+yet confirmed by Patrick.
 
 ### Status
 
 🟡 A second round of fixes from real-hardware testing feedback
-(`Test.txt`, 2026-09-28 - see above) is implemented and unit-tested but
-not yet confirmed on real hardware, and is missing one asset (the logo
-image) to be complete. The first Test.txt round is confirmed working
-by Patrick (pushed, `.exe` rebuilt). The 2026-09-19 round both build on
+(`Test.txt`, 2026-09-28 - see above), including Patrick's own logo, is
+implemented and unit-tested but not yet confirmed on real hardware.
+The first Test.txt round is confirmed working by Patrick (pushed,
+`.exe` rebuilt). The 2026-09-19 round both build on
 (live collector control panel, historical dashboard, Analysis card,
 visual restyle, windowless `run.bat`/`BluetoothWatcher.exe`
 architecture) remains verified and working. Standalone `.exe`

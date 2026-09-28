@@ -151,10 +151,11 @@ A single [NiceGUI](https://nicegui.io/)-based application (decided
 — see [docs/roadmap.md](./docs/roadmap.md) for the full decision),
 with a header and one main part:
 
-- **Header**: a logo (or, until Patrick provides one, a bluetooth icon
-  + "BTBatteryLab" label — drop a `logo.png` into
-  `src/btbatterylab/ui/assets/` and it's picked up automatically, no
-  code change needed), the collector's own status dot and Start/Stop,
+- **Header**: Patrick's own logo (`src/btbatterylab/ui/assets/Vet1.svg`,
+  added 2026-09-28, replacing the "BTBatteryLab" text label — drop any
+  image file into `src/btbatterylab/ui/assets/` and it's picked up
+  automatically, falling back to a bluetooth icon + text label only if
+  that folder is empty), the collector's own status dot and Start/Stop,
   a manual refresh button, and an exit button that stops the
   collector, closes `BluetoothWatcher.exe`, and closes this app's own
   process (widened 2026-09-28 — it used to stop only the collector;

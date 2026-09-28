@@ -110,14 +110,29 @@ _CREATE_NO_WINDOW = (
 )
 
 # Optional replacement for the "BTBatteryLab" text in the header - drop
-# a logo image at this path (any name, .png/.jpg/.svg all work with
-# ui.image) and _build_header() picks it up automatically, no code
-# change needed. Absent by default (nothing is committed here yet):
-# Patrick offered to provide one (Test.txt, 2026-09-28: "aggiungere un
-# logo, che ho io, al posto della scritta 'BTBatteryLab'") but hasn't
-# sent the file yet, so this stays a graceful fallback to the icon +
-# text label rather than a hard dependency.
-_LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
+# any image file into this directory (any name, .svg/.png/.jpg/... all
+# work with ui.image - Patrick's own logo, added 2026-09-28, is an
+# .svg) and _build_header() picks it up automatically, no code change
+# needed. Picks the first image file found (there should only ever be
+# one); falls back to the icon + text label if the directory is empty
+# or missing (e.g. a fresh checkout without the logo file, since it's
+# just a static asset and not required to run the app).
+_LOGO_DIR = Path(__file__).parent / "assets"
+_LOGO_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _find_logo() -> Path | None:
+    if not _LOGO_DIR.is_dir():
+        return None
+
+    for candidate in sorted(_LOGO_DIR.iterdir()):
+        if candidate.suffix.lower() in _LOGO_EXTENSIONS:
+            return candidate
+
+    return None
+
+
+_LOGO_PATH = _find_logo()
 
 
 def _kill_bluetooth_watcher() -> None:
@@ -291,7 +306,7 @@ def _build_header(
 
     with ui.row().classes("w-full items-center justify-between"):
         with ui.row().classes("items-center gap-2"):
-            if _LOGO_PATH.exists():
+            if _LOGO_PATH is not None:
                 ui.image(str(_LOGO_PATH)).classes("h-8 w-auto")
             else:
                 ui.icon("bluetooth").classes("text-3xl text-primary")
