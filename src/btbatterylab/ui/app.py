@@ -364,7 +364,33 @@ def _build_header(
     with ui.row().classes("w-full items-center justify-between"):
         with ui.row().classes("items-center gap-2"):
             if _LOGO_PATH is not None:
-                ui.image(_LOGO_ROUTE).classes("h-8 w-auto")
+                # ui.image() renders through Quasar's <q-img> component,
+                # which does NOT just drop the source into an <img src=...>
+                # and let the browser size it. It fetches/loads the image
+                # out-of-band first to measure its natural width/height,
+                # then sets a JS-computed aspect-ratio (a padding-bottom
+                # percentage) on its container - and until that measurement
+                # resolves, the container has zero height, so nothing is
+                # visible even once the image itself has loaded fine. This
+                # matches everything confirmed via Patrick's DevTools
+                # screenshots on 2026-09-28: the header (built from plain
+                # ui.icon/ui.button elements, not q-img) rendered correctly,
+                # the request to our logo route returned 200 with the right
+                # Content-Type, and the SVG itself previewed perfectly in
+                # DevTools - yet the space reserved for the logo showed
+                # nothing at all, not even a broken-image icon. Patrick's
+                # logo is an unusually complex SVG (an embedded C2PA
+                # manifest, colour-matrix filters, and a <mask> containing a
+                # base64-embedded raster PNG), and q-img's natural-size
+                # measurement was silently failing on it. A plain native
+                # <img> tag has no such out-of-band measurement step - the
+                # browser sizes it directly from the CSS classes we give it
+                # - so we render it with ui.html() instead of ui.image() to
+                # bypass Quasar's <q-img> machinery entirely.
+                ui.html(
+                    f'<img src="{_LOGO_ROUTE}" alt="BTBatteryLab" '
+                    'class="h-8 w-auto">'
+                )
             else:
                 ui.icon("bluetooth").classes("text-3xl text-primary")
                 ui.label("BTBatteryLab").classes("text-2xl font-bold")

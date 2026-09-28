@@ -765,6 +765,33 @@ enough to implement directly with judgment calls noted inline below.
   (`.svg` -> `image/svg+xml`, etc.), bypassing the OS/registry
   dependency entirely; `ui.image()` points at that route instead of
   the raw file path.
+  **Third follow-up bug**: after pulling that fix, closing every
+  stale `python.exe`/`pythonw.exe` process and retesting both
+  `run.bat` and the rebuilt `.exe`, Patrick still saw no logo. Chrome
+  DevTools ruled out every server-side explanation this time: the
+  Network tab showed the `/branding/logo` request returning `200 OK`
+  with `Content-Type: image/svg+xml` (the previous fix confirmed
+  working), and the Preview tab rendered the SVG itself perfectly, so
+  the file being served was neither missing nor malformed. Yet the
+  header - which Patrick confirmed does render, with all its buttons
+  and the status dot - showed an empty gap exactly where the logo
+  should be, with no fallback icon/text either, meaning the
+  `ui.image()` element itself was the problem, not the data behind
+  it. **Root cause**: `ui.image()` doesn't put the source into a
+  plain `<img src=...>` - it renders Quasar's `<q-img>` component
+  (`nicegui/elements/image.js`), which loads the image out-of-band
+  first to measure its natural width/height in JavaScript, then sets
+  a *computed* aspect ratio (a padding-bottom percentage) on its
+  container; until that measurement resolves, the container has zero
+  height, so nothing is visible even though the image loaded fine.
+  Patrick's logo is an unusually complex SVG - it carries an embedded
+  C2PA manifest, colour-matrix filters, and a `<mask>` containing a
+  base64-embedded raster PNG - and `q-img`'s natural-size measurement
+  was silently failing on it. **Fix**: the header now renders the
+  logo with `ui.html('<img src="/branding/logo" ...>')` instead of
+  `ui.image(...)`, using a plain native `<img>` tag with no
+  out-of-band measurement step, so the browser sizes it directly from
+  the same `h-8 w-auto` CSS classes as before.
 
 **Bugs, all root-caused by reading the actual code before fixing**:
 
