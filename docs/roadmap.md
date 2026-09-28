@@ -724,6 +724,22 @@ enough to implement directly with judgment calls noted inline below.
   `_find_logo()`: picks the first image file (any name, any of
   `.svg`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`) found in that directory,
   falling back to the bluetooth icon + text label only if it's empty.
+  **Follow-up bug** (Patrick, after rebuilding the standalone `.exe`:
+  "il logo non appare, propio nulla"): worked when run from source but
+  not from the packaged build. Two compounding causes - (1)
+  `btbatterylab.spec`'s `Analysis` had `datas=[]`, so PyInstaller,
+  which only bundles Python modules it detects via import analysis,
+  silently dropped the whole `assets/` folder (not Python code) from
+  the frozen build; (2) even with that fixed, `app.py`'s own lookup
+  located the assets directory via `Path(__file__).parent`, which is
+  correct from source but no longer points at a real directory once
+  this module is archived into the frozen build. **Fix**: the spec now
+  bundles `src/btbatterylab/ui/assets/` explicitly, and `app.py` checks
+  `sys._MEIPASS` (the directory PyInstaller actually extracts data
+  files into) first, falling back to the `__file__`-relative path only
+  for the normal, non-frozen case. Neither half is testable without a
+  real PyInstaller build on Windows - the `sys._MEIPASS` path-joining
+  logic was verified in isolation instead.
 
 **Bugs, all root-caused by reading the actual code before fixing**:
 
