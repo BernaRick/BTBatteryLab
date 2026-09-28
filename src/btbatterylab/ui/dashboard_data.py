@@ -44,6 +44,15 @@ WINDOW_OPTIONS: dict[str, float] = {
 
 DEFAULT_WINDOW_LABEL = "Last 7 days"
 
+# A window this short (1 hour or 24 hours) frequently doesn't contain
+# enough readings/sessions for battery_analytics to compute a drain
+# rate at all (see MIN_SESSION_DURATION_HOURS and MAX_READING_GAP_HOURS
+# in battery_analytics.py) - not a bug, just not enough data yet. Used
+# by analysis_summary() to tell that apart from "no data in this
+# window at all regardless of length", per Test.txt feedback
+# (2026-09-28).
+SHORT_WINDOW_DAYS_THRESHOLD = 1
+
 STATUS_ONLINE = "Online"
 STATUS_OFFLINE = "Offline"
 STATUS_UNKNOWN = "Unknown"
@@ -139,13 +148,29 @@ def device_row(
 
     status = device_status(summary.address, live_snapshot, collector_running)
 
+    if status == STATUS_OFFLINE:
+        # Per Test.txt feedback (2026-09-28): a device confirmed
+        # offline still shows its last *known* percent, which is
+        # stale - coloring it good/warning/critical would claim a live
+        # reading it isn't, and a red "critical" badge for a device
+        # that's simply switched off (not actually low) is exactly the
+        # kind of thing that confuses a user at a glance. Grey
+        # regardless of the number, same as "no reading at all". Only
+        # for a confirmed Offline status, not Unknown (collector not
+        # running, or not observed yet this run) - there, the last
+        # known percent is the best information available and coloring
+        # it is still useful, same as before this change.
+        battery_color = BATTERY_STATUS_COLOR["unknown"]
+    else:
+        battery_color = BATTERY_STATUS_COLOR[
+            battery_level_status(summary.last_battery_percent)
+        ]
+
     return {
         "address": summary.address,
         "name": name,
         "battery": battery,
-        "battery_color": BATTERY_STATUS_COLOR[
-            battery_level_status(summary.last_battery_percent)
-        ],
+        "battery_color": battery_color,
         "source": summary.last_battery_source or "—",
         "last_seen": summary.last_seen.strftime("%Y-%m-%d %H:%M:%S"),
         "status": status,
@@ -198,12 +223,16 @@ def analysis_summary(report: DeviceReport) -> dict:
     history overview.
     """
 
-    if report.drain_rate_percent_per_hour is None:
+    missing_drain_rate = report.drain_rate_percent_per_hour is None
+    missing_runtime = report.estimated_runtime_hours is None
+    short_window = report.window_days <= SHORT_WINDOW_DAYS_THRESHOLD
+
+    if missing_drain_rate:
         drain_rate = "Not enough data"
     else:
         drain_rate = f"{report.drain_rate_percent_per_hour:.1f}%/h"
 
-    if report.estimated_runtime_hours is None:
+    if missing_runtime:
         estimated_runtime = "Unknown"
     else:
         estimated_runtime = format_hours(report.estimated_runtime_hours)
@@ -226,4 +255,9 @@ def analysis_summary(report: DeviceReport) -> dict:
         "reading_count": report.reading_count,
         "discharge_session_count": report.discharge_session_count,
         "charge_session_count": len(report.charge_sessions),
+        # True when drain rate or runtime is missing *and* it's likely
+        # just because the window is short, rather than there being no
+        # data at all - the dashboard shows a hint suggesting a longer
+        # window only in this case (see app.py's Analysis card).
+        "needs_longer_window": short_window and (missing_drain_rate or missing_runtime),
     }

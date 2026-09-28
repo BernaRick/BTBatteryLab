@@ -13,6 +13,7 @@ from datetime import datetime
 from btbatterylab.analytics.battery_analytics import BatterySession, DeviceReport
 from btbatterylab.collector.unified_collector import DeviceState
 from btbatterylab.ui.dashboard_data import (
+    SHORT_WINDOW_DAYS_THRESHOLD,
     STATUS_OFFLINE,
     STATUS_ONLINE,
     STATUS_UNKNOWN,
@@ -159,6 +160,31 @@ class DeviceRowBatteryColorTests(unittest.TestCase):
         self.assertEqual(row["status"], STATUS_OFFLINE)
         self.assertEqual(row["status_color"], "grey")
 
+    def test_offline_device_battery_is_grey_regardless_of_percent(self) -> None:
+        # Regression test for Test.txt feedback (2026-09-28): a
+        # confirmed-offline device's last known percent is stale, so
+        # its battery badge must stay grey even at a critically low
+        # number - coloring it red would wrongly suggest a live,
+        # currently-low battery.
+        summary = _summary(last_battery_percent=5)
+        live = {summary.address: DeviceState(address=summary.address, online=False)}
+        row = device_row(summary, live, collector_running=True)
+        self.assertEqual(row["status"], STATUS_OFFLINE)
+        self.assertEqual(row["battery"], "5%")
+        self.assertEqual(row["battery_color"], "grey")
+
+    def test_unknown_status_still_colors_battery_by_percent(self) -> None:
+        # Unlike a confirmed Offline status, "Unknown" (collector not
+        # running, or device not observed yet this run) has no live
+        # signal either way - the last known percent is still the best
+        # information available, so it keeps its usual color (this is
+        # also the pre-existing behavior test_critical_battery_maps_to_negative
+        # and test_warning_battery_maps_to_warning above rely on).
+        summary = _summary(last_battery_percent=5)
+        row = device_row(summary, {}, collector_running=False)
+        self.assertEqual(row["status"], STATUS_UNKNOWN)
+        self.assertEqual(row["battery_color"], "negative")
+
 
 class BuildDeviceRowsTests(unittest.TestCase):
     def test_builds_one_row_per_summary_in_order(self) -> None:
@@ -216,11 +242,12 @@ def _report(
     reading_count=0,
     discharge_session_count=0,
     charge_sessions=None,
+    window_days=7,
 ) -> DeviceReport:
     return DeviceReport(
         address="AA:BB:CC:DD:EE:01",
         name="Apple Mouse",
-        window_days=7,
+        window_days=window_days,
         reading_count=reading_count,
         min_percent=min_percent,
         max_percent=max_percent,
@@ -287,6 +314,52 @@ class AnalysisSummaryTests(unittest.TestCase):
     def test_reading_count_passes_through(self) -> None:
         summary = analysis_summary(_report(reading_count=42))
         self.assertEqual(summary["reading_count"], 42)
+
+    def test_short_window_with_missing_drain_rate_needs_longer_window(self) -> None:
+        summary = analysis_summary(
+            _report(
+                window_days=SHORT_WINDOW_DAYS_THRESHOLD,
+                drain_rate_percent_per_hour=None,
+                estimated_runtime_hours=12.0,
+            )
+        )
+        self.assertTrue(summary["needs_longer_window"])
+
+    def test_short_window_with_missing_runtime_needs_longer_window(self) -> None:
+        summary = analysis_summary(
+            _report(
+                window_days=SHORT_WINDOW_DAYS_THRESHOLD,
+                drain_rate_percent_per_hour=2.0,
+                estimated_runtime_hours=None,
+            )
+        )
+        self.assertTrue(summary["needs_longer_window"])
+
+    def test_short_window_with_both_values_present_does_not_need_longer_window(
+        self,
+    ) -> None:
+        summary = analysis_summary(
+            _report(
+                window_days=SHORT_WINDOW_DAYS_THRESHOLD,
+                drain_rate_percent_per_hour=2.0,
+                estimated_runtime_hours=12.0,
+            )
+        )
+        self.assertFalse(summary["needs_longer_window"])
+
+    def test_long_window_with_missing_values_does_not_need_longer_window(self) -> None:
+        # A long window (7/30/90 days) with genuinely no drain rate or
+        # runtime (e.g. the device never discharged) isn't a "go pick a
+        # longer window" situation - there's nothing a longer window
+        # would add.
+        summary = analysis_summary(
+            _report(
+                window_days=7,
+                drain_rate_percent_per_hour=None,
+                estimated_runtime_hours=None,
+            )
+        )
+        self.assertFalse(summary["needs_longer_window"])
 
 
 if __name__ == "__main__":

@@ -681,16 +681,125 @@ fixing**:
 `test_bluetooth_collector.py`, and `test_history_reader.py`. **177
 tests total, all passing.**
 
+**Confirmed working on real hardware** - Patrick pushed the change and
+rebuilt the standalone `.exe`, then did a further round of testing
+(see below) rather than reporting any regression from this round.
+
+### Test.txt feedback round 2 (2026-09-28)
+
+Patrick's further testing after confirming the round above surfaced
+five more UI requests and three more bugs, sent as a second `Test.txt`.
+No clarifying questions were needed this time - each item was clear
+enough to implement directly with judgment calls noted inline below.
+
+**UI requests, four of five implemented**:
+
+- Header buttons "more minimal and visually uniform" - the status
+  badge + separator combo from the round above was replaced with a
+  single row of small flat/dense icon buttons (Start/Stop/Refresh/
+  Exit) plus one small colored status dot (hover for the actual
+  status text), matching Quasar's own icon-button conventions instead
+  of mixing element styles.
+- The battery-history chart showing "Pick a device above..." even
+  when a device *was* selected but simply had no readings in the
+  current time window (e.g. offline for the last 7 days, filtered to
+  "Last 7 days"). **Fix**: the empty-state message is now
+  context-aware - "Pick a device..." only when nothing is selected,
+  "No battery readings in this time window for this device - try a
+  longer window above" when a device is selected but the query
+  returned nothing.
+- Battery history and Analysis given a different width ratio (2:1
+  instead of 1:1) so the chart has more room to read, per Patrick's
+  request that history "needs to be bigger to read the chart better."
+- Clicking a device's row in the overview table now selects that
+  device in the history/Analysis picker above, wired via NiceGUI's
+  `ui.table`'s `rowClick` event - "(if possible)" in Patrick's
+  wording; it was.
+- **Not yet done**: a logo to replace the "BTBatteryLab" text label.
+  Patrick said he has the image file but it wasn't attached to
+  `Test.txt` - the header now falls back to a logo automatically if
+  one is dropped at `src/btbatterylab/ui/assets/logo.png` (no code
+  change needed once he sends it), but the actual image is still
+  needed from him.
+
+**Bugs, all root-caused by reading the actual code before fixing**:
+
+- **Offline device's battery badge colored by its last-known
+  percentage**, which can misleadingly look like a live low-battery
+  warning for a device that's actually just disconnected. **Fix**:
+  `dashboard_data.device_row()` now forces the grey ("unknown") color
+  whenever `status` is specifically `Offline`, regardless of the
+  stored percentage - kept narrow (not applied to the separate
+  `Unknown` status, which still needs percentage-based coloring per
+  the existing, tested behavior) after checking the existing test
+  suite first rather than after breaking it.
+- **Drain rate / estimated runtime showing no data on the 1-hour/24-
+  hour windows**, which is usually expected (too few readings yet in a
+  short window to compute a rate) rather than a real bug, but gave no
+  indication of *why* - Patrick's own suggested fix ("un messaggio che
+  dice che più misurazioni daranno dati più certi"). **Fix**:
+  `analysis_summary()` now returns a `needs_longer_window` flag (true
+  when the window is `<= SHORT_WINDOW_DAYS_THRESHOLD` (1 day) *and*
+  either value is missing) that the Analysis card uses to show a short
+  explanatory hint instead of a bare "Not enough data"/"Unknown" - a
+  long window (7/30/90 days) with genuinely no drain rate (e.g. a
+  device that's never discharged) does *not* show the hint, since a
+  longer window wouldn't add anything there.
+- **PnP battery updates taking ~40s**, much slower than the BLE path,
+  with Patrick's own hypothesis it might be a PowerShell cmdlet delay.
+  Root cause, confirmed by reading `read_battery_levels()`'s embedded
+  PowerShell: `Get-PnpDeviceProperty -InstanceId $_.InstanceId` with no
+  `-KeyName` filter asks Windows for *every* property of the PnP node -
+  a known slow pattern - before this code filters down to the three it
+  actually wants (`DEVPKEY_Bluetooth_DeviceAddress` and the two
+  vendor-specific battery keys) in memory afterwards. **Fix**: the
+  query now passes `-KeyName` with exactly those three property keys,
+  so PowerShell itself only fetches what's needed instead of
+  everything. This can't be measured from this sandbox (no real PnP
+  devices here) - Patrick's confirmation on real hardware will say
+  whether it accounts for the full ~40s or only part of it.
+
+**Also addressed, related to but not itself in Patrick's bug list**:
+the Exit button "doesn't close the browser tab" is architecturally
+unfixable (browsers only let a script close a tab it opened itself -
+already true, and already explained in the round-above writeup and
+the exit dialog's own text). What *was* fixable: what the tab shows
+once the app really has exited. Previously `ui.run_javascript(...)`
+was called without `await`, so the coroutine it returns was never
+actually driven - the `window.close()` attempt likely never even
+reached the browser before the process below exited. **Fix**: the
+call is now awaited (with a short timeout, so a stuck or refused call
+can't block shutdown - the hard `os._exit()` failsafe from the round
+above is started first regardless), and besides trying
+`window.close()`, it now also rewrites the whole page to a plain
+"BTBatteryLab has closed - it's safe to close this tab now" message as
+a fallback, so the tab shows a clear, deliberate end state instead of
+a dead/disconnected-socket page once the server process actually ends.
+
+**7 new/changed tests** across `test_dashboard_data.py` (offline-badge
+coloring, the `needs_longer_window` flag across all four combinations
+of window length and missing values) and `test_bluetooth_collector.py`
+(the `-KeyName` filtering). No test for the header restyle, chart
+empty-state wording, table/picker linkage, or the exit-page JavaScript
+itself - `btbatterylab.ui.app` remains the one deliberately untested
+layer (see [Automated tests](../README.md#automated-tests)), the same
+gap as every round before this one; what's underneath it
+(`dashboard_data`, `bluetooth_collector`) is what's actually covered.
+**184 tests total, all passing.**
+
 **Pending verification on real hardware** - written and unit-tested in
 this same sandbox (no Windows machine, `nicegui`, or real Bluetooth
 hardware available here, same situation as every previous round), not
-yet confirmed by Patrick.
+yet confirmed by Patrick. The logo item additionally needs the image
+file from him before it can be finished at all.
 
 ### Status
 
-🟡 A further round of fixes from real-hardware testing feedback
+🟡 A second round of fixes from real-hardware testing feedback
 (`Test.txt`, 2026-09-28 - see above) is implemented and unit-tested but
-not yet confirmed on real hardware. The 2026-09-19 round it builds on
+not yet confirmed on real hardware, and is missing one asset (the logo
+image) to be complete. The first Test.txt round is confirmed working
+by Patrick (pushed, `.exe` rebuilt). The 2026-09-19 round both build on
 (live collector control panel, historical dashboard, Analysis card,
 visual restyle, windowless `run.bat`/`BluetoothWatcher.exe`
 architecture) remains verified and working. Standalone `.exe`

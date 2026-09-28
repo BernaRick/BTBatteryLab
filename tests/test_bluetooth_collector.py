@@ -178,6 +178,24 @@ class ReadBatteryLevelsTests(unittest.TestCase):
         self.assertEqual(readings[0].timestamp, updated)
 
     @patch("btbatterylab.collector.bluetooth_collector.subprocess.run")
+    def test_command_filters_properties_with_keyname(self, mock_run) -> None:
+        # Regression test for the ~40s PnP battery update delay reported
+        # in Test.txt (2026-09-28): Get-PnpDeviceProperty with no
+        # -KeyName fetches *every* property of a PnP node before this
+        # code filters in-memory, which is slow. Passing -KeyName
+        # restricts PowerShell itself to the three properties actually
+        # used (address, battery level, battery updated timestamp).
+        mock_run.return_value = _run_result(stdout="null")
+
+        self.collector.read_battery_levels()
+
+        command = mock_run.call_args[0][0][2]
+        self.assertIn("-KeyName", command)
+        self.assertIn("DEVPKEY_Bluetooth_DeviceAddress", command)
+        self.assertIn(BATTERY_LEVEL_KEY, command)
+        self.assertIn(BATTERY_UPDATED_KEY, command)
+
+    @patch("btbatterylab.collector.bluetooth_collector.subprocess.run")
     def test_null_result_means_no_readings(self, mock_run) -> None:
         # ForEach-Object emitting nothing serializes as the literal
         # string "null" via ConvertTo-Json, not an empty string.

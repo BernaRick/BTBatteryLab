@@ -151,34 +151,50 @@ A single [NiceGUI](https://nicegui.io/)-based application (decided
 — see [docs/roadmap.md](./docs/roadmap.md) for the full decision),
 with a header and one main part:
 
-- **Header**: title, the collector's own status badge and Start/Stop
-  (restyled 2026-09-28 to compact icon controls, next to Refresh/Exit
-  — this used to be a separate full-width "Collector" card), a manual
-  refresh button, and an exit button that stops the collector, closes
-  `BluetoothWatcher.exe`, and closes this app's own process (widened
-  2026-09-28 — it used to stop only the collector; `stop.bat` is no
-  longer the normal way to close `BluetoothWatcher`, but still works
-  as a manual fallback). Closing the browser tab itself is outside
-  this app's control — browsers only let a script close a tab it
-  opened itself — so Exit is still the one button that actually stops
-  everything. **Implemented, pending verification on real hardware.**
+- **Header**: a logo (or, until Patrick provides one, a bluetooth icon
+  + "BTBatteryLab" label — drop a `logo.png` into
+  `src/btbatterylab/ui/assets/` and it's picked up automatically, no
+  code change needed), the collector's own status dot and Start/Stop,
+  a manual refresh button, and an exit button that stops the
+  collector, closes `BluetoothWatcher.exe`, and closes this app's own
+  process (widened 2026-09-28 — it used to stop only the collector;
+  `stop.bat` is no longer the normal way to close `BluetoothWatcher`,
+  but still works as a manual fallback). Restyled twice on 2026-09-28:
+  first from a full-width "Collector" card into one compact row, then
+  ("review the top-right buttons, more minimal and visually uniform")
+  into a single row of small flat/dense icon buttons plus one small
+  colored status dot, instead of mixing a solid status badge and a
+  separator line in with them. Closing the browser tab itself is
+  outside this app's control — browsers only let a script close a tab
+  it opened itself — so it's replaced with a plain "safe to close"
+  message once Exit has stopped everything, rather than being left
+  showing a dead connection. **Implemented, pending verification on
+  real hardware.**
 - **Device overview and battery history**: a device table (name,
   address, last known battery reading, online/offline status, last
-  seen, source — reordered 2026-09-28 so `source` is last), a
-  name/address filter plus a user-selectable online/offline/unknown
-  status filter (added 2026-09-28), and a battery-history line chart
-  (now with a visible marker on every actual reading, not just a
-  smooth line) with a device and time-window picker (last 1 hour/24
-  hours/7/30/90 days — the 1-hour option added 2026-09-28) — the chart
-  shades the same low/medium-battery bands the table's badges use, so
-  a low stretch is visible on the chart too. Battery history and
-  Analysis (below) now sit side by side instead of stacked (2026-09-28).
-  Online/offline only ever reflects the current run — that state
-  lives in memory while the collector runs, and is never written to
-  the database — so it shows "Unknown" whenever the collector is
-  stopped or a device hasn't been seen yet this run. **Implemented,
-  pending verification on real hardware** (was previously verified,
-  but the 2026-09-28 changes above haven't been re-tested yet).
+  seen, source — reordered 2026-09-28 so `source` is last) whose rows
+  can be clicked to select that device in the history/Analysis picker
+  below (added 2026-09-28), a name/address filter plus a
+  user-selectable online/offline/unknown status filter (added
+  2026-09-28), and a battery-history line chart (now with a visible
+  marker on every actual reading, not just a smooth line) with a
+  device and time-window picker (last 1 hour/24 hours/7/30/90 days —
+  the 1-hour option added 2026-09-28) — the chart shades the same
+  low/medium-battery bands the table's badges use, so a low stretch is
+  visible on the chart too, and now explains *why* it's empty (no
+  device picked vs. no readings in this window for the picked device —
+  fixed 2026-09-28) instead of always showing the "pick a device"
+  message. Battery history and Analysis (below) now sit side by side,
+  with Battery history given more of the width for easier reading
+  (2026-09-28). A device's battery badge always shows grey while it's
+  offline, regardless of its last known percentage, so a stale low
+  reading can't be mistaken for a live one (2026-09-28). Online/offline
+  only ever reflects the current run — that state lives in memory
+  while the collector runs, and is never written to the database — so
+  it shows "Unknown" whenever the collector is stopped or a device
+  hasn't been seen yet this run. **Implemented, pending verification
+  on real hardware** (was previously verified, but the 2026-09-28
+  changes above haven't been re-tested yet).
 - **Analysis**: for whichever device/window is picked above, the
   same drain-rate/estimated-runtime/session-detection numbers the
   `analytics` CLI already computes (see
@@ -190,10 +206,13 @@ with a header and one main part:
   same device (almost always meaning it was actually offline, not
   slowly draining the whole time) no longer gets folded into one
   session — see `MAX_READING_GAP_HOURS` in
-  `battery_analytics.py`. **Implemented, pending verification** — the
-  query/formatting layer is unit-tested (see
-  [Automated tests](#automated-tests)), but the page itself isn't, the
-  same deliberate gap noted below.
+  `battery_analytics.py`. On the 1-hour/24-hour windows, drain rate and
+  estimated runtime often can't be computed yet (too few readings) —
+  a short explanatory hint now appears in that case instead of just a
+  bare "Not enough data"/"Unknown" with no context (added 2026-09-28).
+  **Implemented, pending verification** — the query/formatting layer
+  is unit-tested (see [Automated tests](#automated-tests)), but the
+  page itself isn't, the same deliberate gap noted below.
 
 Refreshes automatically every few seconds, or immediately via the
 refresh icon in the header.
@@ -278,11 +297,13 @@ BTBatteryLab has two parts that run side by side, both living in this one reposi
 
 ### Quick start: `run.bat`
 
-Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below) — both run invisibly in the background now, with no console windows: the collector's own dashboard (which opens in your browser automatically) is where you see what's happening and control it, including Start/Stop for monitoring and an exit button. **To stop everything, click the exit button in the dashboard** — as of 2026-09-28 this alone stops the collector, closes `BluetoothWatcher.exe`, and closes the app's own process; `stop.bat` is kept only as a manual fallback (e.g. if `BluetoothWatcher` was started separately). Pending verification on real hardware — see the note below.
+Once the `.venv` above is set up, double-click [`run.bat`](./run.bat) in the repo root. It starts the Python collector and `BluetoothWatcher` in the right order (see the tip below) — both run invisibly in the background now, with no console windows: the collector's own dashboard (which opens in your browser automatically) is where you see what's happening and control it, including Start/Stop for monitoring and an exit button. **To stop everything, click the exit button in the dashboard** — as of 2026-09-28 this alone stops the collector, closes `BluetoothWatcher.exe`, and closes the app's own process; `stop.bat` is kept only as a manual fallback (e.g. if `BluetoothWatcher` was started separately). The dashboard tab itself still can't be closed by the app (browsers only allow that for a tab a script opened itself) — it's replaced with a plain "safe to close" message instead, so it's obvious the app is actually done (added 2026-09-28, round 2 — see the note below).
 
 > **Verified on real hardware (2026-09-19)**: hiding both windows (`pythonw.exe` for the collector, `BluetoothWatcher.csproj`'s `OutputType` switched to `WinExe`) was written and syntax-checked in a sandbox with no Windows machine or `nicegui`/`dotnet` available to actually run it. The first real test surfaced a bug from exactly that gap (`run.bat` silently failing to open the browser at all, since `pythonw.exe` gives the process no console to show an error on) — diagnosed and fixed (`logging_setup.ensure_console_streams()`, see [docs/roadmap.md](./docs/roadmap.md)'s "Follow-up bug" entry) without being able to reproduce it directly, and confirmed working by Patrick right after ("ok funziona, fatto test"). If `run.bat` ever stops opening the browser again, check `logs\pythonw-stdio.log` alongside `logs\btbatterylab.log`. If the windowless behavior itself causes problems, it can be rolled back by reverting `BluetoothWatcher.csproj`'s `OutputType` to `Exe` and running the collector with `python.exe` instead of `pythonw.exe`.
 >
-> **Pending verification (2026-09-28)**: a further round of fixes from real-hardware testing feedback (see [docs/roadmap.md](./docs/roadmap.md)'s "Test.txt feedback" entry) — same situation as above, written and unit-tested in a sandbox with no real Windows/Bluetooth hardware available. Covers: the exit button now also closing `BluetoothWatcher.exe` and forcing the process to end even if NiceGUI's own shutdown doesn't; the two flashing PowerShell console windows (missing `CREATE_NO_WINDOW`); `last_seen` for offline devices being wrong (PnP polling was updating it for every reading, including stale/cached ones); inaccurate runtime/session analytics (a multi-day offline gap was being counted as one long, slow discharge; a poll returning an unchanged value was writing a new row every cycle); and slow battery status at launch (the first PnP poll's two PowerShell calls now run concurrently instead of one after another). Needs Patrick's confirmation on real hardware before any of it is marked verified.
+> **Verified on real hardware (2026-09-28, round 1)**: the first Test.txt feedback round (exit button widened to also close `BluetoothWatcher.exe`; `CREATE_NO_WINDOW` for the flashing PowerShell windows; `last_seen`/analytics accuracy fixes; concurrent PnP polling) — confirmed working by Patrick, who pushed the change and rebuilt the `.exe`.
+>
+> **Pending verification (2026-09-28, round 2)**: a second round of fixes from further real-hardware testing (see [docs/roadmap.md](./docs/roadmap.md)'s "Test.txt feedback round 2" entry) — again written and unit-tested in a sandbox with no real Windows/Bluetooth hardware available. Covers: a restyled, more uniform header (small flat icon buttons + a status dot, replacing the mismatched badge/separator combo); the battery-history chart now explaining *why* it's empty instead of implying no device is selected; Battery history/Analysis resized so the chart reads more easily; clicking a device row now selects it in the history/Analysis picker; an offline device's battery badge always showing grey, regardless of its last known percentage, so it can't be mistaken for a live low-battery reading; a hint explaining why drain rate/estimated runtime can say "not enough data" on the 1-hour/24-hour windows; the PnP battery poll's PowerShell query now asking Windows for only the three properties it actually needs instead of every property on the device (the suspected cause of a ~40s PnP update delay); and the exit-tab message above. Needs Patrick's confirmation on real hardware before any of it is marked verified.
 
 ### Standalone build: `build_exe.bat`
 
@@ -358,7 +379,7 @@ The one-shot CLI report tools (`btbatterylab.analytics`, `btbatterylab.export`) 
 
 ### Automated tests
 
-The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`, 177 tests as of 2026-09-28), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging (including regression tests for the headless `pythonw.exe` case, where `sys.stdout`/`sys.stderr` are both `None` - the console log handler must be skipped instead of crashing, and anything else that would print or check `sys.stdout.isatty()` gets redirected to a real file instead), SQLite storage (including `ensure_device_exists()`, which never advances `last_seen` on conflict - see the Test.txt feedback entry in the [roadmap](docs/roadmap.md)), battery analytics (including regression tests for the two real-data drain-rate bugs described in the roadmap, plus the newer offline-gap and fractional-window-days regressions), CSV export, the unified collector's event-handling logic (including that a PnP-only reading never moves `last_seen`, an unchanged PnP value isn't rewritten, and `discover()`/`read_battery_levels()` run concurrently), the JSONL tail monitor, and the NiceGUI app's Start/Stop/error state machine (`CollectorManager`), read-only history queries (`history_reader`), and dashboard row/chart formatting, battery-level color banding, and Analysis-card formatting (`dashboard_data`). `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run` (including that both calls pass `creationflags` to suppress their console window on Windows), so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required. Not covered: the NiceGUI page itself (`btbatterylab.ui.app`) — its rendering isn't automated, the same deliberate gap as `BluetoothWatcher`'s C# side (see [Project Roadmap](#project-roadmap)); the state/query/formatting logic it's built on (`CollectorManager`, `history_reader`, `dashboard_data`) is what's actually tested.
+The Python side (`src/btbatterylab/`) has an automated test suite (`tests/`, 184 tests as of 2026-09-28), built entirely on Python's standard `unittest` module — no extra install needed. It covers configuration, structured logging (including regression tests for the headless `pythonw.exe` case, where `sys.stdout`/`sys.stderr` are both `None` - the console log handler must be skipped instead of crashing, and anything else that would print or check `sys.stdout.isatty()` gets redirected to a real file instead), SQLite storage (including `ensure_device_exists()`, which never advances `last_seen` on conflict - see the Test.txt feedback entry in the [roadmap](docs/roadmap.md)), battery analytics (including regression tests for the two real-data drain-rate bugs described in the roadmap, plus the offline-gap and fractional-window-days regressions), CSV export, the unified collector's event-handling logic (including that a PnP-only reading never moves `last_seen`, an unchanged PnP value isn't rewritten, and `discover()`/`read_battery_levels()` run concurrently), the JSONL tail monitor, and the NiceGUI app's Start/Stop/error state machine (`CollectorManager`), read-only history queries (`history_reader`), and dashboard row/chart formatting, battery-level color banding (including that an offline device's badge is always grey regardless of percentage, while an unknown-status device is still colored by percentage), and Analysis-card formatting (`dashboard_data`, including the short-window "needs more data" hint). `BluetoothCollector`'s PowerShell-dependent methods (`discover`/`read_battery_levels`) are tested by mocking `subprocess.run` (including that both calls pass `creationflags` to suppress their console window on Windows, and that `read_battery_levels()`'s query now filters to just the three PnP properties it needs via `-KeyName` — see the Test.txt feedback round 2 entry in the [roadmap](docs/roadmap.md)), so the suite runs the same on any machine — no real Windows Bluetooth hardware or PowerShell required. Not covered: the NiceGUI page itself (`btbatterylab.ui.app`) — its rendering isn't automated, the same deliberate gap as `BluetoothWatcher`'s C# side (see [Project Roadmap](#project-roadmap)); the state/query/formatting logic it's built on (`CollectorManager`, `history_reader`, `dashboard_data`) is what's actually tested.
 
 This is also the first thing to run if something isn't working and you're not sure why — a clean pass is a quick way to rule out a broken install before digging further.
 
