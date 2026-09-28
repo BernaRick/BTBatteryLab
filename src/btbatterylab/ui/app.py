@@ -117,8 +117,30 @@ _CREATE_NO_WINDOW = (
 # one); falls back to the icon + text label if the directory is empty
 # or missing (e.g. a fresh checkout without the logo file, since it's
 # just a static asset and not required to run the app).
-_LOGO_DIR = Path(__file__).parent / "assets"
+#
+# Resolving this directory is *not* as simple as Path(__file__).parent:
+# that's correct when running from source (python.exe/pythonw.exe), but
+# once this module is bundled by the standalone build (build_exe.bat /
+# btbatterylab.spec), PyInstaller archives pure-Python modules like this
+# one into a zip - __file__ then points inside that archive, not at a
+# real directory on disk, so a plain __file__-relative lookup silently
+# finds nothing there (Patrick's report, 2026-09-28: logo committed and
+# present in the repo, but not showing after a rebuild). PyInstaller
+# extracts *data* files (see the spec's own `datas` entry for this
+# folder) under sys._MEIPASS instead - a real directory that only
+# exists in a frozen build - so that's checked first, with the
+# source-tree path as the fallback for the normal, non-frozen case.
 _LOGO_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _resolve_assets_dir() -> Path:
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root is not None:
+        return Path(frozen_root) / "btbatterylab" / "ui" / "assets"
+    return Path(__file__).parent / "assets"
+
+
+_LOGO_DIR = _resolve_assets_dir()
 
 
 def _find_logo() -> Path | None:

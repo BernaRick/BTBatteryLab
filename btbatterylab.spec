@@ -9,10 +9,18 @@
 # --onedir mode (not --onefile): produces dist/btbatterylab/ with
 # btbatterylab.exe plus its dependencies as a folder - immediate
 # startup and easier to debug than --onefile, which instead unpacks
-# itself into a temp folder on every launch. The collector has no
-# third-party dependencies (only the standard library: sqlite3,
-# threading, json, pathlib, subprocess), so no hidden-imports are
-# needed.
+# itself into a temp folder on every launch. The collector's own code
+# has no third-party dependencies beyond nicegui (only the standard
+# library otherwise: sqlite3, threading, json, pathlib, subprocess),
+# so no hidden-imports are needed.
+#
+# `datas` bundles src/btbatterylab/ui/assets/ (Patrick's logo, see
+# app.py's _LOGO_DIR) into the frozen build under btbatterylab/ui/
+# assets/ - PyInstaller only auto-bundles Python modules it detects via
+# import analysis, never arbitrary static files sitting next to them,
+# so this static asset needs listing explicitly or it's silently
+# missing from the build (caught 2026-09-28: the logo was committed and
+# worked when run from source, but not after a rebuild).
 
 block_cipher = None
 
@@ -20,7 +28,9 @@ a = Analysis(
     ["src/btbatterylab/main.py"],
     pathex=["src"],
     binaries=[],
-    datas=[],
+    datas=[
+        ("src/btbatterylab/ui/assets", "btbatterylab/ui/assets"),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
