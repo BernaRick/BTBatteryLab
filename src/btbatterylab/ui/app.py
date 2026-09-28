@@ -156,6 +156,41 @@ def _find_logo() -> Path | None:
 
 _LOGO_PATH = _find_logo()
 
+# ui.image() on a real on-disk path serves it through NiceGUI's own
+# add_static_file() (nicegui/app/app.py), which returns
+# FileResponse(file, headers={"Cache-Control": ...}) with *no* explicit
+# media_type - so the Content-Type header comes from Starlette's
+# mimetypes.guess_type() fallback. That's registry-backed on Windows
+# (HKEY_CLASSES_ROOT\.<ext>\Content Type), and a missing/wrong .svg
+# entry there makes it return None, which Starlette serves as
+# application/octet-stream - something browsers won't render inline as
+# an <img>, i.e. exactly "no logo at all" with no broken-image icon
+# (confirmed via Patrick's own page dump, 2026-09-28: the <img src=""
+# pointed at a valid, correctly-generated NiceGUI static route, so the
+# file *was* found and served - just with the wrong header). Serving it
+# from our own route with an explicit media_type= sidesteps the OS/
+# registry dependency entirely.
+_LOGO_MIME_TYPES = {
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+_LOGO_ROUTE = "/branding/logo"
+
+if _LOGO_PATH is not None:
+    from fastapi.responses import FileResponse
+
+    _logo_mime = _LOGO_MIME_TYPES.get(
+        _LOGO_PATH.suffix.lower(), "application/octet-stream"
+    )
+
+    @app.get(_LOGO_ROUTE)
+    def _serve_logo() -> FileResponse:
+        return FileResponse(_LOGO_PATH, media_type=_logo_mime)
+
 
 def _kill_bluetooth_watcher() -> None:
     """
@@ -329,7 +364,7 @@ def _build_header(
     with ui.row().classes("w-full items-center justify-between"):
         with ui.row().classes("items-center gap-2"):
             if _LOGO_PATH is not None:
-                ui.image(str(_LOGO_PATH)).classes("h-8 w-auto")
+                ui.image(_LOGO_ROUTE).classes("h-8 w-auto")
             else:
                 ui.icon("bluetooth").classes("text-3xl text-primary")
                 ui.label("BTBatteryLab").classes("text-2xl font-bold")

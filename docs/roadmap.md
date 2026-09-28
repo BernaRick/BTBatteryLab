@@ -740,6 +740,31 @@ enough to implement directly with judgment calls noted inline below.
   for the normal, non-frozen case. Neither half is testable without a
   real PyInstaller build on Windows - the `sys._MEIPASS` path-joining
   logic was verified in isolation instead.
+  **Second follow-up bug** (Patrick, after rebuilding again and testing
+  both the `.exe` and `run.bat`: "niente logo... io non ho trovato
+  nulla di sbagliato", with a full HTML dump of the running page
+  attached): still no logo, on *both* methods this time. Patrick's HTML
+  dump was the key piece of evidence - it showed NiceGUI had generated
+  a perfectly valid static route for `Vet1.svg`
+  (`/_nicegui/auto/static/<hash>/Vet1.svg`), proving the file *was*
+  being found and served correctly, which ruled out both previous
+  fixes as the cause and pointed somewhere new. **Root cause**:
+  NiceGUI's own static-file serving (`add_static_file()` in
+  `nicegui/app/app.py`) returns the file via Starlette's
+  `FileResponse` without ever setting an explicit `media_type`, so the
+  browser is told the file's Content-Type by Python's
+  `mimetypes.guess_type()` - which, for `.svg` specifically, also
+  consults the Windows registry (`HKEY_CLASSES_ROOT\.svg\Content
+  Type`) on that platform. A missing or wrong entry there makes it
+  return nothing, so the file gets served as
+  `application/octet-stream` - a generic "download this" type that
+  browsers won't render inline as an `<img>`, which looks exactly like
+  "no logo at all" with no broken-image icon. **Fix**: the app now
+  serves the logo from its own route (`/branding/logo`) with an
+  explicit, hardcoded extension-to-MIME mapping
+  (`.svg` -> `image/svg+xml`, etc.), bypassing the OS/registry
+  dependency entirely; `ui.image()` points at that route instead of
+  the raw file path.
 
 **Bugs, all root-caused by reading the actual code before fixing**:
 
