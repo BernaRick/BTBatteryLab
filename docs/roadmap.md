@@ -566,14 +566,136 @@ stdio.log` (new) exists if anything similar ever resurfaces - it
 should now capture whatever a third-party library would otherwise
 have printed, alongside `logs\btbatterylab.log`.
 
+### Test.txt feedback round (2026-09-28)
+
+After the round above was confirmed working and the standalone build
+rebuilt, Patrick did a further round of testing on real hardware and
+sent back a `Test.txt` with six UI requests and five bugs. Six
+clarifying questions were asked first (`AskUserQuestion`) rather than
+guessing on the two genuinely ambiguous ones, and answered before any
+change was made.
+
+**UI requests, all implemented**:
+
+- Collector status/Start/Stop moved from their own full-width
+  "Collector" card into the header, restyled to match the compact
+  icon-first Refresh/Exit buttons (the ambiguous one - confirmed
+  "move it, don't just restyle it in place").
+- A user-selectable online/offline/unknown status filter on the
+  device table, alongside the existing name/address text filter.
+- `source` moved to the last column of the device table.
+- Battery history and Analysis now sit side by side (wrapping to
+  stacked on narrow screens) instead of stacked full-width.
+- A "Last 1 hour" option added to the Battery history window picker -
+  turned out to need no special-casing anywhere: `battery_history()`/
+  `build_device_report()` already only use `window_days` inside a
+  `timedelta(...)`, which accepts a plain float (`1/24`) just as well
+  as an int.
+- The battery-history chart now shows a visible marker (`showSymbol`)
+  on every actual reading, not just a smooth interpolated line.
+
+**Bugs, all root-caused by reading the actual code (not guessed) before
+fixing**:
+
+- **"Last seen" wrong for offline devices** (stuck at dashboard-launch
+  time). Root cause: `_poll_pnp_battery()` called
+  `SqliteStorage.record_device_seen()` - which advances `last_seen` -
+  for *every* PnP battery reading, including stale/cached values
+  Windows keeps reporting for a device that's actually offline (see
+  `BluetoothCollector.read_battery_levels()`'s own docstring, which
+  already documented this). But presence is architecturally the
+  "ble" channel's job (`_handle_ble_event`, which BluetoothWatcher
+  fires for every paired device, BLE and classic alike, on every real
+  connect/disconnect) - PnP polling has no reliable way to tell a
+  fresh reading from a stale one, so it should never touch
+  `last_seen` at all. **Fix**: a new `SqliteStorage.ensure_device_exists()`
+  that creates the device row if missing (so `record_battery()`'s
+  foreign key is satisfied) but never advances `last_seen` or the name
+  on conflict - `_poll_pnp_battery()` now calls this instead of
+  `record_device_seen()`.
+- **Inaccurate "Estimated runtime left" / "Battery range (avg)" /
+  charge-discharge session counts**. Two compounding root causes: (1)
+  `_poll_pnp_battery()` wrote a brand new `battery_log` row on *every*
+  poll, even when the value hadn't changed - for a device stuck
+  reporting the same cached percentage while offline, that's a new row
+  every `poll_interval_seconds`, and when the real value finally
+  changed on reconnect, the transition looked artificially fast
+  (bloating `reading_count` and, mostly caught by the existing
+  `MAX_PLAUSIBLE_DISCHARGE_RATE_PERCENT_PER_HOUR` filter, effectively
+  losing that signal rather than misrepresenting it). (2) A device
+  found at (say) 80% and not seen again for days until it reconnected
+  at 60% was treated as one continuous discharge session spanning the
+  whole gap - a drain rate so slow it implied days of remaining
+  runtime, when the battery was actually used up during whatever time
+  it was really connected. **Fix**: `_poll_pnp_battery()` now tracks
+  the last value it wrote per address and skips the write when
+  unchanged; `battery_analytics._build_sessions()` now has a
+  `MAX_READING_GAP_HOURS` (6.0) - a gap longer than that between two
+  readings for the same device closes out whatever session was
+  building instead of bridging across it, on the reasoning that a real
+  connected device reports far more often than that, so a long silence
+  almost always means it was actually offline.
+- **Exit button not closing everything** (Patrick's report: didn't
+  close the browser or `BluetoothWatcher.exe`, only stopped the
+  collector). This was a deliberate design decision from the round
+  above (Exit = collector + Python process, `stop.bat` = separate for
+  `BluetoothWatcher`) that Patrick asked to widen rather than a bug in
+  the narrower behavior - confirmed via `AskUserQuestion` ("Exit
+  should close everything"). **Fix**: `_exit_app()` now also runs
+  `taskkill /F /IM BluetoothWatcher.exe /T` (the same mechanism
+  `stop.bat` already used), and a `threading.Timer`-based hard
+  `os._exit()` failsafe fires a few seconds later in case
+  `app.shutdown()` doesn't actually end the process on its own -
+  `app.shutdown()`'s behavior has varied across NiceGUI
+  versions/native-vs-browser modes, so this guarantees the process
+  ends either way instead of chasing every version's exact behavior.
+  The browser tab itself stays outside the app's control (a script can
+  only close a tab it opened itself) - the exit-confirmation dialog's
+  text was reworded to not promise that.
+- **Two flashing PowerShell console windows** on every PnP poll cycle,
+  with no output. Root cause: neither of `BluetoothCollector`'s two
+  `subprocess.run(["powershell", ...])` calls (`discover()`,
+  `read_battery_levels()`) passed `creationflags=CREATE_NO_WINDOW` -
+  harmless while the parent ran under `python.exe` with its own real
+  console for the child to share, but a regression exposed by the
+  2026-09-19 windowless change (`pythonw.exe` has no console of its
+  own, so each PowerShell child now opens a brand new, briefly-visible
+  one). "2 windows" matches exactly: one call each. **Fix**: both
+  calls now pass `creationflags` (0, a no-op, on anything but Windows -
+  this module's own tests run on Linux with `subprocess.run` mocked).
+- **Slow battery status update at dashboard launch**. Root cause:
+  `UnifiedCollector.start()` kicks off the first PnP poll immediately,
+  and `_poll_pnp_battery()` ran `discover()` (up to 15s) and
+  `read_battery_levels()` (up to `pnp_timeout_seconds`, 60s by
+  default) one after another - up to ~75s worst case before a classic
+  device (no BLE Battery Service) shows any battery data. **Fix**:
+  the two calls - independent of each other; `discover()` only
+  supplies display names here - now run concurrently on a
+  `ThreadPoolExecutor`, cutting the worst case roughly in half to
+  `max(~15s, pnp_timeout_seconds)`. A genuine architecture change (e.g.
+  reading battery from the C# watcher instead of PowerShell/WMI) would
+  cut this further but is out of scope for this round.
+
+**19 new/changed tests** across `test_sqlite_storage.py`,
+`test_unified_collector.py`, `test_analytics.py`,
+`test_bluetooth_collector.py`, and `test_history_reader.py`. **177
+tests total, all passing.**
+
+**Pending verification on real hardware** - written and unit-tested in
+this same sandbox (no Windows machine, `nicegui`, or real Bluetooth
+hardware available here, same situation as every previous round), not
+yet confirmed by Patrick.
+
 ### Status
 
-🟢 Feature-complete and verified on real hardware - live collector
-control panel, historical dashboard, Analysis card, visual restyle,
-and windowless `run.bat`/`BluetoothWatcher.exe` architecture all
-implemented and confirmed working by Patrick. Standalone `.exe`
-packaging (`build_exe.bat`) still needs a rebuild to pick up this
-round's changes - see the possible-next-steps list in
+🟡 A further round of fixes from real-hardware testing feedback
+(`Test.txt`, 2026-09-28 - see above) is implemented and unit-tested but
+not yet confirmed on real hardware. The 2026-09-19 round it builds on
+(live collector control panel, historical dashboard, Analysis card,
+visual restyle, windowless `run.bat`/`BluetoothWatcher.exe`
+architecture) remains verified and working. Standalone `.exe`
+packaging (`build_exe.bat`) needs a rebuild to pick up this round's
+changes too - see the possible-next-steps list in
 `claude/project-status.md`.
 
 ---

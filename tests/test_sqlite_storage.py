@@ -114,6 +114,55 @@ class SqliteStorageTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(count, 2)
 
+    def test_ensure_device_exists_creates_device(self) -> None:
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        self.storage.ensure_device_exists("AA:BB:CC:DD:EE:FF", "Test Headset", now)
+
+        row = self.storage._connection.execute(
+            "SELECT name, first_seen, last_seen FROM devices WHERE address = ?",
+            ("AA:BB:CC:DD:EE:FF",),
+        ).fetchone()
+        self.assertIsNotNone(row)
+        name, first_seen, last_seen = row
+        self.assertEqual(name, "Test Headset")
+        self.assertEqual(first_seen, last_seen)
+
+    def test_ensure_device_exists_never_advances_last_seen_on_conflict(self) -> None:
+        # This is the whole point of ensure_device_exists over
+        # record_device_seen: a PnP poll reporting a stale/cached
+        # value for an offline device must not make the dashboard
+        # think it was "last seen" just now.
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        self.storage.record_device_seen("AA:BB:CC:DD:EE:FF", "Test Headset", base)
+
+        much_later = base + timedelta(days=3)
+        self.storage.ensure_device_exists("AA:BB:CC:DD:EE:FF", "Test Headset", much_later)
+
+        _, _, last_seen = self.storage._connection.execute(
+            "SELECT name, first_seen, last_seen FROM devices WHERE address = ?",
+            ("AA:BB:CC:DD:EE:FF",),
+        ).fetchone()
+        self.assertEqual(last_seen, base.isoformat(timespec="microseconds"))
+
+    def test_ensure_device_exists_never_overwrites_existing_name(self) -> None:
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        self.storage.record_device_seen("AA:BB:CC:DD:EE:FF", "Real Name", base)
+        self.storage.ensure_device_exists("AA:BB:CC:DD:EE:FF", "Some Other Name", base)
+
+        name, = self.storage._connection.execute(
+            "SELECT name FROM devices WHERE address = ?", ("AA:BB:CC:DD:EE:FF",)
+        ).fetchone()
+        self.assertEqual(name, "Real Name")
+
+    def test_ensure_device_exists_error_is_caught_not_raised(self) -> None:
+        self.storage._connection = MagicMock()
+        self.storage._connection.execute.side_effect = sqlite3.Error("boom")
+
+        try:
+            self.storage.ensure_device_exists("AA:BB:CC:DD:EE:FF", "Test Mouse", datetime.now())
+        except sqlite3.Error:
+            self.fail("ensure_device_exists must not let a sqlite3.Error escape")
+
     def test_record_device_seen_error_is_caught_not_raised(self) -> None:
         self.storage._connection = MagicMock()
         self.storage._connection.execute.side_effect = sqlite3.Error("boom")

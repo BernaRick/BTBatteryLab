@@ -10,12 +10,15 @@ previously had zero automated coverage and could only be checked by
 Patrick on real hardware).
 """
 
+import importlib
 import json
 import subprocess
+import sys
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from btbatterylab.collector import bluetooth_collector
 from btbatterylab.collector.bluetooth_collector import (
     BATTERY_LEVEL_KEY,
     BATTERY_UPDATED_KEY,
@@ -306,6 +309,61 @@ class ReadBatteryLevelsTests(unittest.TestCase):
 
         _, kwargs = mock_run.call_args
         self.assertEqual(kwargs["timeout"], 45.0)
+
+
+class SuppressedConsoleWindowTests(unittest.TestCase):
+    """
+    Regression coverage for Test.txt feedback (2026-09-28): "2
+    finestre di powershell intermittenti" - every subprocess.run(
+    ["powershell", ...]) call must pass creationflags so the child
+    process doesn't pop up its own console window (only actually
+    suppresses anything on Windows - see
+    bluetooth_collector._CREATE_NO_WINDOW).
+    """
+
+    @patch("btbatterylab.collector.bluetooth_collector.subprocess.run")
+    def test_discover_passes_creationflags(self, mock_run) -> None:
+        mock_run.return_value = _run_result(stdout="[]")
+
+        BluetoothCollector().discover()
+
+        _, kwargs = mock_run.call_args
+        self.assertIn("creationflags", kwargs)
+        self.assertEqual(kwargs["creationflags"], bluetooth_collector._CREATE_NO_WINDOW)
+
+    @patch("btbatterylab.collector.bluetooth_collector.subprocess.run")
+    def test_read_battery_levels_passes_creationflags(self, mock_run) -> None:
+        mock_run.return_value = _run_result(stdout="null")
+
+        BluetoothCollector().read_battery_levels()
+
+        _, kwargs = mock_run.call_args
+        self.assertIn("creationflags", kwargs)
+        self.assertEqual(kwargs["creationflags"], bluetooth_collector._CREATE_NO_WINDOW)
+
+    def test_create_no_window_is_a_real_flag_on_windows(self) -> None:
+        with patch.object(sys, "platform", "win32"):
+            reloaded = importlib.reload(bluetooth_collector)
+        try:
+            # subprocess.CREATE_NO_WINDOW is Windows-only and won't
+            # exist in this test environment - a fake stand-in
+            # confirms the module actually looks it up instead of
+            # hardcoding 0, without needing to run on real Windows.
+            with patch.object(subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True),                     patch.object(sys, "platform", "win32"):
+                reloaded = importlib.reload(bluetooth_collector)
+                self.assertEqual(reloaded._CREATE_NO_WINDOW, 0x08000000)
+        finally:
+            # Restore the real (non-Windows-in-this-sandbox) module
+            # state for every other test in the suite.
+            importlib.reload(bluetooth_collector)
+
+    def test_create_no_window_is_a_no_op_off_windows(self) -> None:
+        with patch.object(sys, "platform", "linux"):
+            reloaded = importlib.reload(bluetooth_collector)
+        try:
+            self.assertEqual(reloaded._CREATE_NO_WINDOW, 0)
+        finally:
+            importlib.reload(bluetooth_collector)
 
 
 if __name__ == "__main__":

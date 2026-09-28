@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -100,6 +101,15 @@ class UnifiedCollector:
         )
         self._storage = SqliteStorage(db_path)
         self._states: dict[str, DeviceState] = {}
+        # Last PnP battery_percent actually written to battery_log per
+        # address - lets _poll_pnp_battery skip re-writing an unchanged
+        # value every poll_interval_seconds (see _poll_pnp_battery for
+        # why: without this, a device stuck reporting the same
+        # stale/cached value while offline gets a brand new row every
+        # poll, each timestamped ~now, which both bloats reading_count
+        # and can make the eventual real change look like it happened
+        # much faster than it did once the device reconnects.
+        self._last_pnp_percent: dict[str, int] = {}
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._poll_now_event = threading.Event()
@@ -194,11 +204,26 @@ class UnifiedCollector:
         Returns True if the poll succeeded, False otherwise (used by
         _polling_loop to decide whether to retry right away instead of
         waiting the full poll_interval_seconds).
+
+        discover() and read_battery_levels() are two independent
+        PowerShell round-trips (discover() only feeds display names
+        here, it doesn't gate read_battery_levels()) - running them on
+        separate threads instead of one after another roughly halves
+        the worst case (up to ~15s + pnp_timeout_seconds run
+        serially, vs. max(~15s, pnp_timeout_seconds) run together).
+        This is the first poll's latency Test.txt feedback
+        (2026-09-28) reported as "slowness updating battery status at
+        launch": UnifiedCollector.start() kicks it off immediately,
+        and for classic devices without a BLE Battery Service, nothing
+        shows in the dashboard until it finishes.
         """
 
         try:
-            devices = self._collector.discover()
-            readings = self._collector.read_battery_levels()
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                discover_future = executor.submit(self._collector.discover)
+                readings_future = executor.submit(self._collector.read_battery_levels)
+                devices = discover_future.result()
+                readings = readings_future.result()
         except Exception as ex:
             logger.error(f"Error during PnP polling: {ex}")
             return False
@@ -223,7 +248,15 @@ class UnifiedCollector:
                     state, names_by_address.get(address)
                 )
 
-                self._storage.record_device_seen(
+                # Deliberately NOT record_device_seen(): PnP polling
+                # can't tell a fresh reading apart from a stale/cached
+                # one still reported for an offline device (see
+                # BluetoothCollector.read_battery_levels()), so it must
+                # never move last_seen forward - only make sure the row
+                # exists, so record_battery()'s foreign key is
+                # satisfied. Presence is the "ble" channel's job (see
+                # _handle_ble_event), which covers every paired device.
+                self._storage.ensure_device_exists(
                     address, state.name, reading.timestamp
                 )
 
@@ -234,12 +267,21 @@ class UnifiedCollector:
                     source="pnp",
                 )
 
-                self._storage.record_battery(
-                    address,
-                    reading.battery_percent,
-                    reading.timestamp,
-                    source="pnp",
-                )
+                # Only persist when the value actually changed (or
+                # this is the first PnP reading for this address): a
+                # classic device that's currently offline keeps
+                # reporting the same cached percentage every poll, and
+                # writing a new row for it each time doesn't add real
+                # information - see _last_pnp_percent above.
+                previous_percent = self._last_pnp_percent.get(address)
+                if previous_percent != reading.battery_percent:
+                    self._storage.record_battery(
+                        address,
+                        reading.battery_percent,
+                        reading.timestamp,
+                        source="pnp",
+                    )
+                    self._last_pnp_percent[address] = reading.battery_percent
 
                 updated_addresses.append(address)
 

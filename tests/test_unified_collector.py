@@ -16,12 +16,15 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from btbatterylab.collector.unified_collector import (
     DeviceState,
     UnifiedCollector,
     _is_generic_name,
 )
+from btbatterylab.models.battery_reading import BatteryReading
+from btbatterylab.models.device import Device
 
 
 class IsGenericNameTests(unittest.TestCase):
@@ -293,6 +296,175 @@ class ProcessJsonLineTests(unittest.TestCase):
         self.assertEqual(
             self.collector.snapshot()["AA:BB:CC:DD:EE:FF"].name, "OPPO Enco Air2"
         )
+
+
+class PollPnpBatteryTests(unittest.TestCase):
+    """
+    _poll_pnp_battery isn't threaded itself (only _polling_loop, which
+    calls it, is) - see this module's own docstring - so it's exercised
+    directly here, against a real tmp-path SqliteStorage, with
+    BluetoothCollector.discover()/read_battery_levels() mocked out
+    (same reasoning as tests/test_bluetooth_collector.py: no real
+    Windows/PowerShell involved).
+
+    Regression coverage for the Test.txt feedback (2026-09-28):
+    "last seen" for offline devices being stuck at dashboard-launch
+    time, traced to PnP polling calling record_device_seen() for
+    every reading - including stale/cached ones for devices that
+    aren't actually online (see ensure_device_exists() in
+    SqliteStorage) - and analytics accuracy, traced to a new
+    battery_log row being written for every poll even when the value
+    hadn't changed (see _last_pnp_percent).
+    """
+
+    def setUp(self) -> None:
+        self.tmp_dir = Path(tempfile.mkdtemp(prefix="btb_pnp_poll_"))
+        self.addCleanup(shutil.rmtree, self.tmp_dir, ignore_errors=True)
+
+        self.collector = UnifiedCollector(
+            jsonl_path=self.tmp_dir / "ble-events.jsonl",
+            db_path=self.tmp_dir / "btbatterylab.db",
+        )
+        self.addCleanup(self.collector._storage.close)
+
+    def _battery_rows(self, address: str) -> list[tuple[int, str]]:
+        rows = self.collector._storage._connection.execute(
+            "SELECT battery_percent, timestamp FROM battery_log "
+            "WHERE address = ? ORDER BY timestamp",
+            (address,),
+        ).fetchall()
+        return rows
+
+    def _device_last_seen(self, address: str) -> str | None:
+        row = self.collector._storage._connection.execute(
+            "SELECT last_seen FROM devices WHERE address = ?", (address,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def test_pnp_only_reading_never_moves_last_seen(self) -> None:
+        # A classic headset that's actually offline: PnP still reports
+        # its last cached battery value, with a fabricated "now"
+        # timestamp (no BatteryUpdated property) each poll - last_seen
+        # must not follow that fabricated timestamp forward.
+        address = "AA:BB:CC:DD:EE:FF"
+        first_poll_time = datetime(2026, 1, 1, 9, 0, 0)
+        second_poll_time = datetime(2026, 1, 1, 9, 5, 0)
+
+        with patch.object(self.collector._collector, "discover", return_value=[
+            Device(id="id1", name="Test Headset", status="OK", address=address)
+        ]), patch.object(
+            self.collector._collector, "read_battery_levels",
+            return_value=[BatteryReading(device_id=address, battery_percent=42, timestamp=first_poll_time)],
+        ):
+            self.collector._poll_pnp_battery()
+
+        last_seen_after_first = self._device_last_seen(address)
+        self.assertEqual(last_seen_after_first, first_poll_time.isoformat(timespec="microseconds"))
+
+        with patch.object(self.collector._collector, "discover", return_value=[
+            Device(id="id1", name="Test Headset", status="OK", address=address)
+        ]), patch.object(
+            self.collector._collector, "read_battery_levels",
+            return_value=[BatteryReading(device_id=address, battery_percent=42, timestamp=second_poll_time)],
+        ):
+            self.collector._poll_pnp_battery()
+
+        # Still the first poll's timestamp: a PnP-only reading must
+        # never advance last_seen, no matter how many times it polls.
+        self.assertEqual(self._device_last_seen(address), last_seen_after_first)
+
+    def test_ble_presence_still_advances_last_seen_for_a_pnp_known_device(self) -> None:
+        # last_seen is the "ble" channel's job - confirm it still works
+        # normally for a device PnP already created a row for.
+        address = "AA:BB:CC:DD:EE:FF"
+        with patch.object(self.collector._collector, "discover", return_value=[]),                 patch.object(
+                    self.collector._collector, "read_battery_levels",
+                    return_value=[BatteryReading(device_id=address, battery_percent=42, timestamp=datetime(2026, 1, 1, 9, 0, 0))],
+                ):
+            self.collector._poll_pnp_battery()
+
+        event = {
+            "Event": "ConnectionStatusChanged",
+            "BluetoothAddress": address,
+            "Status": "Connected",
+            "Timestamp": "2026-01-01T12:00:00",
+        }
+        self.collector.process_json_line(json_line(event))
+
+        self.assertEqual(
+            self._device_last_seen(address),
+            datetime(2026, 1, 1, 12, 0, 0).isoformat(timespec="microseconds"),
+        )
+
+    def test_unchanged_pnp_value_is_not_rewritten(self) -> None:
+        address = "AA:BB:CC:DD:EE:FF"
+        for minute in (0, 5, 10):
+            with patch.object(self.collector._collector, "discover", return_value=[]),                     patch.object(
+                        self.collector._collector, "read_battery_levels",
+                        return_value=[
+                            BatteryReading(
+                                device_id=address,
+                                battery_percent=42,
+                                timestamp=datetime(2026, 1, 1, 9, minute, 0),
+                            )
+                        ],
+                    ):
+                self.collector._poll_pnp_battery()
+
+        self.assertEqual(len(self._battery_rows(address)), 1)
+
+    def test_changed_pnp_value_is_recorded_again(self) -> None:
+        address = "AA:BB:CC:DD:EE:FF"
+        for minute, percent in ((0, 42), (5, 42), (10, 38)):
+            with patch.object(self.collector._collector, "discover", return_value=[]),                     patch.object(
+                        self.collector._collector, "read_battery_levels",
+                        return_value=[
+                            BatteryReading(
+                                device_id=address,
+                                battery_percent=percent,
+                                timestamp=datetime(2026, 1, 1, 9, minute, 0),
+                            )
+                        ],
+                    ):
+                self.collector._poll_pnp_battery()
+
+        rows = self._battery_rows(address)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([percent for percent, _ in rows], [42, 38])
+
+    def test_discover_and_read_battery_levels_run_concurrently(self) -> None:
+        # Regression test for Test.txt feedback (2026-09-28): "slowness
+        # updating battery status at launch" - discover() and
+        # read_battery_levels() must run on separate threads, not one
+        # after the other, so the first poll's latency is roughly
+        # max(a, b) instead of a + b.
+        import time
+
+        def slow_discover():
+            time.sleep(0.2)
+            return []
+
+        def slow_read_battery_levels():
+            time.sleep(0.2)
+            return []
+
+        with patch.object(self.collector._collector, "discover", side_effect=slow_discover),                 patch.object(
+                    self.collector._collector, "read_battery_levels",
+                    side_effect=slow_read_battery_levels,
+                ):
+            start = time.monotonic()
+            self.collector._poll_pnp_battery()
+            elapsed = time.monotonic() - start
+
+        # Serial would take >= 0.4s; concurrent should stay well under
+        # that - 0.35s leaves comfortable margin for scheduling jitter.
+        self.assertLess(elapsed, 0.35)
+
+    def test_poll_returns_false_on_powershell_error(self) -> None:
+        with patch.object(
+            self.collector._collector, "discover", side_effect=RuntimeError("boom")
+        ):
+            self.assertFalse(self.collector._poll_pnp_battery())
 
 
 def json_line(event: dict) -> str:

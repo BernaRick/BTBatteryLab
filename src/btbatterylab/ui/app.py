@@ -3,13 +3,14 @@ The NiceGUI application - v0.2's UI, replacing both the console-only
 collector and the originally-planned Streamlit dashboard (see
 docs/roadmap.md, "UI Technology Decision: NiceGUI").
 
-Three parts on one page, top to bottom: a header (title, a manual
-Refresh button, an Exit button that stops everything - see below),
-the live control panel (Start/Stop, status), and the historical
-dashboard - a device overview table, a filter, a device/time-window
-picker, a battery-history chart, and an Analysis card (drain rate,
-estimated remaining runtime, battery range, session counts) for
-whichever device/window is picked. Built on top of
+Two parts on one page, top to bottom: a header (title, collector
+status/Start/Stop, a manual Refresh button, and an Exit button that
+stops everything - see _exit_app), and the historical dashboard - a
+device overview table (with a name/address filter and an online/
+offline status filter), a device/time-window picker, a battery-history
+chart, and an Analysis card (drain rate, estimated remaining runtime,
+battery range, session counts) for whichever device/window is picked,
+side by side for easier reading. Built on top of
 btbatterylab.ui.history_reader (read-only SQLite queries),
 btbatterylab.analytics.battery_analytics (the same drain-rate/runtime/
 session-detection logic the `analytics` CLI already uses), and
@@ -42,10 +43,109 @@ of Task Manager.
 from __future__ import annotations
 
 import inspect
+import logging
+import os
+import subprocess
+import sys
+import threading
 from datetime import datetime
 from typing import Callable
 
 from nicegui import app, ui
+
+logger = logging.getLogger(__name__)
+
+# How long _exit_app() waits for NiceGUI's own app.shutdown() to end
+# the process cleanly before forcing it with os._exit() - a safety
+# net, not the normal path: Test.txt feedback (2026-09-28) reported
+# Exit not actually closing the app. app.shutdown()'s behavior varies
+# across NiceGUI versions/native-vs-browser modes (see the comment on
+# result/inspect.isawaitable below), so rather than chase every
+# version's exact behavior, this guarantees the process ends either
+# way.
+_HARD_EXIT_GRACE_SECONDS = 3.0
+
+# taskkill's own timeout is generous enough that this never needs a
+# long wait - it either finds the process and kills it, or (already
+# not running) returns almost immediately.
+_TASKKILL_TIMEOUT_SECONDS = 10.0
+
+# Same reasoning as bluetooth_collector._CREATE_NO_WINDOW: only
+# meaningful on Windows, a harmless 0 (no-op) everywhere else,
+# including in this module's own tests.
+_CREATE_NO_WINDOW = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+)
+
+
+def _kill_bluetooth_watcher() -> None:
+    """
+    Same mechanism as stop.bat (see build_exe.bat/stop.bat):
+    `taskkill /F /IM BluetoothWatcher.exe /T` - kills BluetoothWatcher
+    and, since it can run the Python collector as its own background
+    child process (see docs/roadmap.md), that whole process tree too.
+    A no-op (logged, not raised) if it isn't running or this isn't
+    Windows - Exit must still close the rest of the app either way.
+    """
+
+    if sys.platform != "win32":
+        return
+
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "BluetoothWatcher.exe", "/T"],
+            capture_output=True,
+            text=True,
+            timeout=_TASKKILL_TIMEOUT_SECONDS,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+    except Exception as ex:
+        # Most likely: BluetoothWatcher.exe wasn't running at all
+        # (taskkill's own "not found" case is a non-zero exit code,
+        # not an exception, so this is for the rarer failure to even
+        # launch taskkill) - never let this block the rest of Exit.
+        logger.warning(f"Could not stop BluetoothWatcher.exe: {ex}")
+
+
+async def _exit_app(manager: CollectorManager) -> None:
+    """
+    Exit is meant to be a single button that leaves nothing running -
+    the collector, BluetoothWatcher.exe, and this app's own process
+    (Test.txt feedback, 2026-09-28: it previously stopped only the
+    collector). The browser tab itself is the one part genuinely out
+    of this app's control: browsers only let a script close a tab it
+    opened itself, so the best this can do is ask (window.close() is a
+    no-op in most browsers for a tab the user opened by hand) - the
+    dialog text sets that expectation instead of promising it.
+    """
+
+    manager.stop()
+    _kill_bluetooth_watcher()
+
+    # Best-effort only, per the docstring above - silently does
+    # nothing in the (common) case the browser refuses it.
+    try:
+        ui.run_javascript("window.close()")
+    except Exception:
+        pass
+
+    # A hard failsafe: if app.shutdown() doesn't actually end the
+    # process (see _HARD_EXIT_GRACE_SECONDS above), this guarantees it
+    # does anyway. Runs on its own daemon thread so it can't be
+    # cancelled by whatever happens (or doesn't) on the async path
+    # below.
+    def _force_exit_if_still_running() -> None:
+        os._exit(0)
+
+    threading.Timer(_HARD_EXIT_GRACE_SECONDS, _force_exit_if_still_running).start()
+
+    # app.shutdown() has been sync in some NiceGUI versions and a
+    # coroutine in others - this awaits it only if it actually
+    # returned something awaitable, so this keeps working either way
+    # without pinning to one exact NiceGUI release.
+    result = app.shutdown()
+    if inspect.isawaitable(result):
+        await result
 
 from btbatterylab.analytics.battery_analytics import build_device_report
 from btbatterylab.collector.unified_collector import UnifiedCollector
@@ -53,12 +153,16 @@ from btbatterylab.config import Config
 from btbatterylab.ui.collector_manager import (
     STATUS_ERROR,
     STATUS_RUNNING,
+    STATUS_STOPPED,
     CollectorManager,
 )
 from btbatterylab.ui.dashboard_data import (
     BATTERY_GOOD_THRESHOLD,
     BATTERY_WARNING_THRESHOLD,
     DEFAULT_WINDOW_LABEL,
+    STATUS_OFFLINE,
+    STATUS_ONLINE,
+    STATUS_UNKNOWN,
     WINDOW_OPTIONS,
     analysis_summary,
     build_device_rows,
@@ -72,13 +176,26 @@ _STATUS_COLORS = {
     STATUS_ERROR: "negative",
 }
 
+# "All" plus the three device_status() outcomes (see
+# dashboard_data.py) - a user-selectable filter alongside the existing
+# name/address text filter, per Test.txt feedback (2026-09-28).
+_STATUS_FILTER_ALL = "All"
+_STATUS_FILTER_OPTIONS = [
+    _STATUS_FILTER_ALL,
+    STATUS_ONLINE,
+    STATUS_OFFLINE,
+    STATUS_UNKNOWN,
+]
+
 _DEVICE_COLUMNS = [
     {"name": "name", "label": "Device", "field": "name", "align": "left", "sortable": True},
     {"name": "address", "label": "Address", "field": "address", "align": "left"},
     {"name": "battery", "label": "Battery", "field": "battery", "align": "right", "sortable": True},
-    {"name": "source", "label": "Source", "field": "source", "align": "left"},
     {"name": "status", "label": "Status", "field": "status", "align": "left", "sortable": True},
     {"name": "last_seen", "label": "Last seen", "field": "last_seen", "align": "left", "sortable": True},
+    # Last column, per Test.txt feedback (2026-09-28) - the least
+    # frequently-needed field at a glance.
+    {"name": "source", "label": "Source", "field": "source", "align": "left"},
 ]
 
 # Sequential blue (mid step) for the battery-history line, plus the
@@ -115,36 +232,45 @@ def _stat_tile(title: str) -> ui.label:
 def _build_header(
     manager: CollectorManager, on_refresh_click: Callable[[], None]
 ) -> ui.label:
+    """
+    Title, collector status/controls, last-updated time, and the
+    Refresh/Exit actions, all in one compact row. The collector status
+    badge and Start/Stop used to be their own full-width "Collector"
+    card below this header - moved and restyled to match Refresh/Exit
+    (small, icon-first controls) per Test.txt feedback (2026-09-28).
+    """
+
     with ui.row().classes("w-full items-center justify-between"):
         with ui.row().classes("items-center gap-2"):
             ui.icon("bluetooth").classes("text-3xl text-primary")
             ui.label("BTBatteryLab").classes("text-2xl font-bold")
 
-        with ui.row().classes("items-center gap-2"):
+        with ui.row().classes("items-center gap-1"):
+            status_badge = ui.badge("").props("rounded").classes("mr-1")
+            with status_badge:
+                status_tooltip = ui.tooltip("")
+
+            start_button = ui.button(on_click=lambda: manager.start()).props(
+                "flat round icon=play_arrow"
+            ).tooltip("Start collector")
+            stop_button = ui.button(on_click=lambda: manager.stop()).props(
+                "flat round icon=stop"
+            ).tooltip("Stop collector")
+
+            ui.separator().props("vertical").classes("mx-1 h-6")
+
             last_updated_label = ui.label("").classes("text-xs text-grey")
 
             with ui.dialog() as exit_dialog, ui.card():
                 ui.label("Exit BTBatteryLab?").classes("text-lg font-semibold")
                 ui.label(
-                    "This stops the collector and closes this app "
-                    "completely - not just the dashboard tab."
+                    "This stops the collector, closes BluetoothWatcher, "
+                    "and closes this app completely - not just the "
+                    "dashboard tab."
                 ).classes("text-sm text-grey")
                 with ui.row().classes("w-full justify-end gap-2 mt-2"):
                     ui.button("Cancel", on_click=exit_dialog.close).props("flat")
-
-                    async def _exit_app() -> None:
-                        manager.stop()
-                        # app.shutdown() has been sync in some
-                        # NiceGUI versions and a coroutine in
-                        # others - this awaits it only if it
-                        # actually returned something awaitable,
-                        # so this keeps working either way without
-                        # pinning to one exact NiceGUI release.
-                        result = app.shutdown()
-                        if inspect.isawaitable(result):
-                            await result
-
-                    ui.button("Exit", color="negative", on_click=_exit_app)
+                    ui.button("Exit", color="negative", on_click=lambda: _exit_app(manager))
 
             ui.button(on_click=lambda: on_refresh_click()).props(
                 "flat round icon=refresh"
@@ -153,35 +279,20 @@ def _build_header(
                 "flat round icon=power_settings_new color=negative"
             ).tooltip("Exit BTBatteryLab")
 
+    def refresh_status() -> None:
+        status = manager.status
+        status_badge.text = status
+        status_badge.props(f"color={_STATUS_COLORS.get(status, 'grey')}")
+        start_button.set_enabled(status != STATUS_RUNNING)
+        stop_button.set_enabled(status != STATUS_STOPPED)
+
+        error = manager.error_message
+        status_tooltip.text = error or status.capitalize()
+
+    ui.timer(1.0, refresh_status)
+    refresh_status()
+
     return last_updated_label
-
-
-def _build_control_panel(manager: CollectorManager) -> None:
-    with ui.card().classes("w-full"):
-        ui.label("Collector").classes("text-lg font-semibold")
-
-        status_badge = ui.badge("").props("rounded")
-        error_label = ui.label("").classes("text-negative text-sm")
-
-        with ui.row():
-            start_button = ui.button("Start", on_click=lambda: manager.start())
-            stop_button = ui.button("Stop", on_click=lambda: manager.stop())
-
-        def refresh() -> None:
-            status = manager.status
-            status_badge.text = status
-            status_badge.props(
-                f"color={_STATUS_COLORS.get(status, 'grey')}"
-            )
-            start_button.set_enabled(status != STATUS_RUNNING)
-            stop_button.set_enabled(status != "stopped")
-
-            error = manager.error_message
-            error_label.text = error or ""
-            error_label.set_visibility(bool(error))
-
-        ui.timer(1.0, refresh)
-        refresh()
 
 
 def _build_dashboard(
@@ -194,11 +305,18 @@ def _build_dashboard(
         # wasteful (and, on a slow disk, briefly janky) - this waits
         # for a short pause in typing instead, same idea as a
         # search-as-you-type field anywhere else.
-        filter_input = (
-            ui.input("Filter by name or address")
-            .classes("w-full")
-            .props("debounce=300 clearable")
-        )
+        with ui.row().classes("w-full items-center gap-4"):
+            filter_input = (
+                ui.input("Filter by name or address")
+                .classes("flex-grow")
+                .props("debounce=300 clearable")
+            )
+            status_filter_select = ui.select(
+                options=_STATUS_FILTER_OPTIONS,
+                value=_STATUS_FILTER_ALL,
+                label="Status",
+            ).classes("min-w-32")
+
         device_table = ui.table(
             columns=_DEVICE_COLUMNS, rows=[], row_key="address"
         ).classes("w-full")
@@ -224,91 +342,96 @@ def _build_dashboard(
             </q-td>
             """,
         )
-        empty_label = ui.label(
-            "No devices seen yet - once the collector spots one, it "
-            "shows up here."
-        ).classes("text-sm text-grey")
+        empty_label = ui.label("").classes("text-sm text-grey")
 
-    with ui.card().classes("w-full"):
-        ui.label("Battery history").classes("text-lg font-semibold")
+    # Side by side (wraps to stacked on narrow screens) per Test.txt
+    # feedback (2026-09-28): "easier to read the data" next to each
+    # other, rather than one long vertical scroll.
+    with ui.row().classes("w-full gap-4 items-stretch"):
+        with ui.card().classes("flex-1 min-w-[340px]"):
+            ui.label("Battery history").classes("text-lg font-semibold")
 
-        with ui.row().classes("items-center gap-4"):
-            device_select = ui.select(options={}, label="Device").classes("min-w-64")
-            window_select = ui.select(
-                options=list(WINDOW_OPTIONS.keys()),
-                value=DEFAULT_WINDOW_LABEL,
-                label="Window",
-            ).classes("min-w-40")
+            with ui.row().classes("items-center gap-4"):
+                device_select = ui.select(options={}, label="Device").classes("min-w-64")
+                window_select = ui.select(
+                    options=list(WINDOW_OPTIONS.keys()),
+                    value=DEFAULT_WINDOW_LABEL,
+                    label="Window",
+                ).classes("min-w-40")
 
-        chart = ui.echart(
-            {
-                "grid": {"left": 45, "right": 20, "top": 20, "bottom": 30},
-                "xAxis": {"type": "time"},
-                "yAxis": {
-                    "type": "value",
-                    "min": 0,
-                    "max": 100,
-                    "name": "%",
-                    "axisLabel": {"formatter": "{value}%"},
-                },
-                "tooltip": {"trigger": "axis"},
-                "series": [
-                    {
-                        "type": "line",
-                        "name": "Battery",
-                        "showSymbol": False,
-                        "lineStyle": {"width": 2, "color": _CHART_LINE_COLOR},
-                        "itemStyle": {"color": _CHART_LINE_COLOR},
-                        "areaStyle": {"opacity": 0.08, "color": _CHART_LINE_COLOR},
-                        "data": [],
-                        # Shades the same warning/critical battery bands
-                        # the device table's badges use (see
-                        # dashboard_data.BATTERY_*_THRESHOLD), so a low
-                        # stretch is visible on the chart too, not just
-                        # in the table.
-                        "markArea": {
-                            "silent": True,
-                            "itemStyle": {"opacity": 0.12},
-                            "data": [
-                                [
-                                    {
-                                        "yAxis": 0,
-                                        "itemStyle": {"color": _CHART_CRITICAL_BAND_COLOR},
-                                    },
-                                    {"yAxis": BATTERY_WARNING_THRESHOLD},
+            chart = ui.echart(
+                {
+                    "grid": {"left": 45, "right": 20, "top": 20, "bottom": 30},
+                    "xAxis": {"type": "time"},
+                    "yAxis": {
+                        "type": "value",
+                        "min": 0,
+                        "max": 100,
+                        "name": "%",
+                        "axisLabel": {"formatter": "{value}%"},
+                    },
+                    "tooltip": {"trigger": "axis"},
+                    "series": [
+                        {
+                            "type": "line",
+                            "name": "Battery",
+                            # Per Test.txt feedback (2026-09-28): visible
+                            # markers on each actual battery_log reading,
+                            # not just a smooth line between them.
+                            "showSymbol": True,
+                            "symbolSize": 6,
+                            "lineStyle": {"width": 2, "color": _CHART_LINE_COLOR},
+                            "itemStyle": {"color": _CHART_LINE_COLOR},
+                            "areaStyle": {"opacity": 0.08, "color": _CHART_LINE_COLOR},
+                            "data": [],
+                            # Shades the same warning/critical battery bands
+                            # the device table's badges use (see
+                            # dashboard_data.BATTERY_*_THRESHOLD), so a low
+                            # stretch is visible on the chart too, not just
+                            # in the table.
+                            "markArea": {
+                                "silent": True,
+                                "itemStyle": {"opacity": 0.12},
+                                "data": [
+                                    [
+                                        {
+                                            "yAxis": 0,
+                                            "itemStyle": {"color": _CHART_CRITICAL_BAND_COLOR},
+                                        },
+                                        {"yAxis": BATTERY_WARNING_THRESHOLD},
+                                    ],
+                                    [
+                                        {
+                                            "yAxis": BATTERY_WARNING_THRESHOLD,
+                                            "itemStyle": {"color": _CHART_WARNING_BAND_COLOR},
+                                        },
+                                        {"yAxis": BATTERY_GOOD_THRESHOLD},
+                                    ],
                                 ],
-                                [
-                                    {
-                                        "yAxis": BATTERY_WARNING_THRESHOLD,
-                                        "itemStyle": {"color": _CHART_WARNING_BAND_COLOR},
-                                    },
-                                    {"yAxis": BATTERY_GOOD_THRESHOLD},
-                                ],
-                            ],
-                        },
-                    }
-                ],
-            }
-        ).classes("w-full h-64")
-        chart_empty_label = ui.label(
-            "Pick a device above to see its battery history."
-        ).classes("text-sm text-grey")
+                            },
+                        }
+                    ],
+                }
+            ).classes("w-full h-64")
+            chart_empty_label = ui.label(
+                "Pick a device above to see its battery history."
+            ).classes("text-sm text-grey")
 
-    with ui.card().classes("w-full"):
-        ui.label("Analysis").classes("text-lg font-semibold")
-        ui.label(
-            "Same device and time window as above."
-        ).classes("text-xs text-grey mb-2")
+        with ui.card().classes("flex-1 min-w-[340px]"):
+            ui.label("Analysis").classes("text-lg font-semibold")
+            ui.label(
+                "Same device and time window as above."
+            ).classes("text-xs text-grey mb-2")
 
-        with ui.row().classes("w-full flex-wrap gap-6"):
-            drain_rate_label = _stat_tile("Drain rate")
-            runtime_label = _stat_tile("Estimated runtime left")
-            range_label = _stat_tile("Battery range (avg)")
-            sessions_label = _stat_tile("Charge / discharge sessions")
+            with ui.row().classes("w-full flex-wrap gap-6"):
+                drain_rate_label = _stat_tile("Drain rate")
+                runtime_label = _stat_tile("Estimated runtime left")
+                range_label = _stat_tile("Battery range (avg)")
+                sessions_label = _stat_tile("Charge / discharge sessions")
 
-        analysis_empty_label = ui.label(
-            "Pick a device above to see its analysis."
-        ).classes("text-sm text-grey")
+            analysis_empty_label = ui.label(
+                "Pick a device above to see its analysis."
+            ).classes("text-sm text-grey")
 
     def refresh_devices() -> None:
         connection = connect_readonly(config.db_path)
@@ -328,6 +451,17 @@ def _build_dashboard(
         collector_running = manager.status == STATUS_RUNNING
 
         rows = build_device_rows(summaries, live_snapshot, collector_running)
+
+        status_filter = status_filter_select.value
+        if status_filter and status_filter != _STATUS_FILTER_ALL:
+            rows = [row for row in rows if row["status"] == status_filter]
+            empty_label.text = f"No {status_filter.lower()} devices right now."
+        else:
+            empty_label.text = (
+                "No devices seen yet - once the collector spots one, it "
+                "shows up here."
+            )
+
         device_table.rows = rows
         device_table.set_visibility(bool(rows))
         empty_label.set_visibility(not rows)
@@ -387,6 +521,7 @@ def _build_dashboard(
         on_refresh()
 
     filter_input.on_value_change(lambda _: refresh_all())
+    status_filter_select.on_value_change(lambda _: refresh_all())
     device_select.on_value_change(lambda _: refresh_all())
     window_select.on_value_change(lambda _: refresh_all())
 
@@ -408,8 +543,6 @@ def _build_page(manager: CollectorManager, config: Config) -> None:
         last_updated_label = _build_header(
             manager, on_refresh_click=lambda: refresh_holder["refresh"]()
         )
-        _build_control_panel(manager)
-
         def update_last_updated() -> None:
             last_updated_label.text = f"Updated {datetime.now().strftime('%H:%M:%S')}"
 

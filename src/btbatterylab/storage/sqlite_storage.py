@@ -111,6 +111,46 @@ class SqliteStorage:
         except sqlite3.Error as ex:
             logger.error(f"Error in record_device_seen: {ex}")
 
+    def ensure_device_exists(
+        self,
+        address: str,
+        name: str | None,
+        timestamp: datetime,
+    ) -> None:
+        """
+        Creates the device row if it doesn't exist yet (first_seen =
+        last_seen = timestamp), but - unlike record_device_seen() -
+        never moves last_seen forward on an existing row, and never
+        touches the name of an existing row either.
+
+        This is what the "pnp" channel uses before writing to
+        battery_log (battery_log.address has a foreign key on
+        devices.address, so the row has to exist first): PnP polling
+        has no reliable way to tell a genuinely fresh reading apart
+        from a stale/cached one still being reported for a device
+        that's actually offline (see BluetoothCollector.
+        read_battery_levels()), so it must never be the channel that
+        decides presence/last_seen - that's the "ble" channel's job
+        (see UnifiedCollector, record_device_seen()), which is the
+        only one with a real connect/disconnect signal, for every
+        paired device (BLE and classic alike).
+        """
+
+        ts = self._format_timestamp(timestamp)
+
+        try:
+            with self._lock, self._connection:
+                self._connection.execute(
+                    """
+                    INSERT INTO devices (address, name, first_seen, last_seen)
+                    VALUES (:address, :name, :ts, :ts)
+                    ON CONFLICT(address) DO NOTHING
+                    """,
+                    {"address": address, "name": name, "ts": ts},
+                )
+        except sqlite3.Error as ex:
+            logger.error(f"Error in ensure_device_exists: {ex}")
+
     def record_battery(
         self,
         address: str,

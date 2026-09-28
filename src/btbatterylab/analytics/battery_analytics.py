@@ -30,7 +30,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-DEFAULT_WINDOW_DAYS = 30
+DEFAULT_WINDOW_DAYS: float = 30
 
 # A session shorter than this is treated as reporting noise rather
 # than a real trend, and is dropped before computing the drain rate or
@@ -61,6 +61,21 @@ MIN_SESSION_DURATION_HOURS = 10 / 60  # 10 minutes
 # to full in well under an hour, so a high charge rate isn't a sign of
 # bad data the way a high discharge rate is.
 MAX_PLAUSIBLE_DISCHARGE_RATE_PERCENT_PER_HOUR = 40.0
+
+# Two consecutive battery_log readings for the same device further
+# apart than this are treated as a gap, not a continuous trend: a
+# real, connected device reports (or is polled) far more often than
+# this, so a gap this long almost always means the device was
+# actually offline/out of range for part of it, not slowly draining
+# the whole time. Without this, a device found at 80% and not seen
+# again until it reconnects three days later at 60% turned into one
+# "discharge session" spanning three full days - a drain rate so slow
+# it implied days of remaining runtime, when the battery actually
+# used up that 20% during whatever usage time happened in between (see
+# Test.txt feedback, 2026-09-28: "Estimated runtime left" and "Battery
+# range (avg)" not matching reality). A gap this long simply starts a
+# new session instead of extending the current one across it.
+MAX_READING_GAP_HOURS = 6.0
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -103,7 +118,7 @@ class BatterySession:
 class DeviceReport:
     address: str
     name: str | None
-    window_days: int
+    window_days: float
     reading_count: int
     min_percent: int | None
     max_percent: int | None
@@ -169,6 +184,16 @@ def _build_sessions(
     for i in range(1, len(readings)):
         prev_time, prev_percent, _ = readings[i - 1]
         time, percent, _ = readings[i]
+
+        gap_hours = (time - prev_time).total_seconds() / 3600.0
+        if gap_hours > MAX_READING_GAP_HOURS:
+            # Long silence: don't bridge it as if the device drained
+            # (or charged) continuously the whole time - close out
+            # whatever was building and start clean from this reading.
+            if current is not None:
+                sessions.append(current)
+                current = None
+            continue
 
         if percent < prev_percent:
             direction = "discharge"
@@ -255,7 +280,7 @@ def build_device_report(
     connection: sqlite3.Connection,
     address: str,
     name: str | None,
-    window_days: int = DEFAULT_WINDOW_DAYS,
+    window_days: float = DEFAULT_WINDOW_DAYS,
 ) -> DeviceReport:
     since = datetime.now() - timedelta(days=window_days)
     readings = _fetch_readings(connection, address, since)
@@ -296,7 +321,7 @@ def build_device_report(
 
 def build_all_reports(
     connection: sqlite3.Connection,
-    window_days: int = DEFAULT_WINDOW_DAYS,
+    window_days: float = DEFAULT_WINDOW_DAYS,
     device_filter: str | None = None,
 ) -> list[DeviceReport]:
     devices = _fetch_devices(connection, device_filter)

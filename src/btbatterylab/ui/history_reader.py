@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DEFAULT_WINDOW_DAYS = 7
+DEFAULT_WINDOW_DAYS: float = 7
 
 
 @dataclass
@@ -114,7 +114,7 @@ def list_devices(
 def battery_history(
     connection: sqlite3.Connection,
     address: str,
-    window_days: int = DEFAULT_WINDOW_DAYS,
+    window_days: float = DEFAULT_WINDOW_DAYS,
 ) -> list[BatteryPoint]:
     """
     Every battery_log reading for one device within the last

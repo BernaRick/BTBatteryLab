@@ -197,6 +197,18 @@ class BatteryHistoryTests(unittest.TestCase):
             battery_history(self.connection, "AA:BB:CC:DD:EE:01", window_days=7), []
         )
 
+    def test_fractional_window_days_works_for_a_one_hour_window(self) -> None:
+        # WINDOW_OPTIONS' "Last 1 hour" passes window_days=1/24 - a
+        # plain float, not an int - see dashboard_data.WINDOW_OPTIONS.
+        now = datetime.now()
+        self._insert_reading("AA:BB:CC:DD:EE:01", now - timedelta(hours=2), 70)
+        self._insert_reading("AA:BB:CC:DD:EE:01", now - timedelta(minutes=30), 65)
+        self._insert_reading("AA:BB:CC:DD:EE:01", now, 60)
+
+        points = battery_history(self.connection, "AA:BB:CC:DD:EE:01", window_days=1 / 24)
+
+        self.assertEqual([p.battery_percent for p in points], [65, 60])
+
 
 class ConnectReadonlyTests(unittest.TestCase):
     def setUp(self) -> None:

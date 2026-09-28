@@ -16,6 +16,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from btbatterylab.analytics.battery_analytics import (
+    MAX_READING_GAP_HOURS,
     build_all_reports,
     build_device_report,
     format_hours,
@@ -234,6 +235,100 @@ class ReliabilityFilterRegressionTests(_DatabaseTestCase):
         self.assertIsNotNone(report.drain_rate_percent_per_hour)
         self.assertAlmostEqual(report.drain_rate_percent_per_hour, 5.0, delta=0.1)
         self.assertEqual(report.discharge_session_count, 1)
+
+
+class OfflineGapRegressionTests(_DatabaseTestCase):
+    """
+    Regression coverage for Test.txt feedback (2026-09-28): "Estimated
+    runtime left" and "Battery range (avg)" not matching reality,
+    traced to a session bridging a gap where the device was actually
+    offline (not seen/polled) as if it had drained continuously the
+    whole time - see MAX_READING_GAP_HOURS.
+    """
+
+    def test_gap_longer_than_threshold_does_not_form_one_slow_session(self) -> None:
+        # Found at 80%, not seen again for days, then found at 60% -
+        # without the gap check this becomes one multi-day "discharge"
+        # implying days of remaining runtime, when the battery was
+        # actually used up in whatever time it was really online.
+        connection = self.make_db()
+        now = datetime.now()
+        _insert_device(connection, ADDRESS, NAME, now)
+
+        readings = [
+            (now - timedelta(hours=MAX_READING_GAP_HOURS + 48), 80),
+            (now, 60),
+        ]
+        _insert_readings(connection, ADDRESS, readings)
+
+        report = build_device_report(connection, ADDRESS, NAME, window_days=30)
+
+        # The gap is dropped entirely rather than treated as one slow
+        # session - too little data to build one, not "not enough of a
+        # drop to matter".
+        self.assertIsNone(report.drain_rate_percent_per_hour)
+        self.assertEqual(report.discharge_session_count, 0)
+
+    def test_gap_just_under_threshold_still_forms_a_session(self) -> None:
+        connection = self.make_db()
+        now = datetime.now()
+        _insert_device(connection, ADDRESS, NAME, now)
+
+        readings = [
+            (now - timedelta(hours=MAX_READING_GAP_HOURS - 0.5), 80),
+            (now, 60),
+        ]
+        _insert_readings(connection, ADDRESS, readings)
+
+        report = build_device_report(connection, ADDRESS, NAME, window_days=30)
+
+        self.assertIsNotNone(report.drain_rate_percent_per_hour)
+        self.assertEqual(report.discharge_session_count, 1)
+
+    def test_gap_splits_sessions_on_either_side_independently(self) -> None:
+        # A normal discharge, then a multi-day offline gap, then
+        # another normal discharge: two separate, reliable sessions,
+        # not one long unreliable one and not zero.
+        connection = self.make_db()
+        now = datetime.now()
+        _insert_device(connection, ADDRESS, NAME, now)
+
+        readings = [
+            (now - timedelta(hours=75), 100),
+            (now - timedelta(hours=72), 90),  # normal 3h session before the gap
+            (now - timedelta(hours=1), 60),  # gap of ~71h - offline in between
+            (now, 50),  # normal 1h session after the gap
+        ]
+        _insert_readings(connection, ADDRESS, readings)
+
+        report = build_device_report(connection, ADDRESS, NAME, window_days=30)
+
+        self.assertEqual(report.discharge_session_count, 2)
+
+
+class FractionalWindowDaysTests(_DatabaseTestCase):
+    """
+    dashboard_data.WINDOW_OPTIONS' "Last 1 hour" passes window_days as
+    a plain float (1/24), not an int - confirms build_device_report()
+    handles that correctly end to end.
+    """
+
+    def test_one_hour_window_only_sees_readings_within_the_last_hour(self) -> None:
+        connection = self.make_db()
+        now = datetime.now()
+        _insert_device(connection, ADDRESS, NAME, now)
+
+        readings = [
+            (now - timedelta(hours=2), 90),
+            (now - timedelta(minutes=30), 70),
+            (now, 65),
+        ]
+        _insert_readings(connection, ADDRESS, readings)
+
+        report = build_device_report(connection, ADDRESS, NAME, window_days=1 / 24)
+
+        self.assertEqual(report.reading_count, 2)
+        self.assertEqual(report.last_percent, 65)
 
 
 class DeviceFilterTests(_DatabaseTestCase):

@@ -1,7 +1,24 @@
 import json
 import re
 import subprocess
+import sys
 from datetime import datetime
+
+# Prevents each PowerShell child process from popping up its own
+# console window. Harmless (and unnecessary) when a real console is
+# already present (e.g. running python.exe from a terminal), but
+# without it, once the parent process runs under pythonw.exe (no
+# console of its own to inherit - see docs/roadmap.md, "windowless
+# startup") every subprocess.run(["powershell", ...]) call below opens
+# a brand new, briefly-visible console window instead - the "2
+# flashing PowerShell windows" reported in Test.txt (2026-09-28): one
+# per call, discover() and read_battery_levels(), each PnP poll cycle.
+# CREATE_NO_WINDOW only exists on Windows, so this is 0 (a no-op flag)
+# anywhere else - this module's subprocess calls only work on Windows
+# in the first place (they shell out to powershell), but tests still
+# import and exercise this module on Linux/CI with subprocess.run
+# mocked out, so the attribute lookup itself must not blow up there.
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
 
 from btbatterylab.models.device import Device
 from btbatterylab.models.battery_reading import BatteryReading
@@ -84,6 +101,7 @@ class BluetoothCollector:
                 capture_output=True,
                 text=True,
                 timeout=15,
+                creationflags=_CREATE_NO_WINDOW,
             )
         except subprocess.TimeoutExpired as ex:
             raise RuntimeError(
@@ -199,6 +217,7 @@ class BluetoothCollector:
                 capture_output=True,
                 text=True,
                 timeout=self._pnp_timeout_seconds,
+                creationflags=_CREATE_NO_WINDOW,
             )
         except subprocess.TimeoutExpired as ex:
             raise RuntimeError(

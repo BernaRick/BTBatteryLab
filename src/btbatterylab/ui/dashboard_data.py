@@ -29,8 +29,13 @@ from btbatterylab.ui.history_reader import BatteryPoint, DeviceSummary
 
 # Label shown in the dashboard's time-window selector, mapped to the
 # window_days argument btbatterylab.ui.history_reader.battery_history()
-# expects. Dict order is display order.
-WINDOW_OPTIONS: dict[str, int] = {
+# expects. Dict order is display order. A fraction of a day works
+# just as well as a whole one - both battery_history() and
+# build_device_report() only ever use it inside a
+# timedelta(days=window_days), which accepts a float - so "Last 1
+# hour" (1/24) needs no special-casing anywhere downstream.
+WINDOW_OPTIONS: dict[str, float] = {
+    "Last 1 hour": 1 / 24,
     "Last 24 hours": 1,
     "Last 7 days": 7,
     "Last 30 days": 30,
